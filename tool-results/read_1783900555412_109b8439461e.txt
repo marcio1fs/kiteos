@@ -1,0 +1,1157 @@
+     1→// KiteOS - Sistema SaaS para Gestão de Oficinas Mecânicas
+     2→// Schema completo do banco de dados
+     3→//
+     4→// AUDIT v2 — 2026-03-05
+     5→// Changes: Float→Decimal for money, added missing officeId, added indexes,
+     6→//   added missing NF-e fields, added optimistic locking, added unique
+     7→//   constraints scoped per tenant, hardened FK behaviours, added missing
+     8→//   soft-delete / audit fields, added Sequencer model for thread-safe
+     9→//   number generation.
+    10→
+    11→generator client {
+    12→  provider = "prisma-client-js"
+    13→}
+    14→
+    15→datasource db {
+    16→  provider = "sqlite"
+    17→  url      = env("DATABASE_URL")
+    18→}
+    19→
+    20→// =============================================
+    21→// AUTH & TENANCY
+    22→// =============================================
+    23→
+    24→model Office {
+    25→  id              String    @id @default(cuid())
+    26→  name            String
+    27→  cnpj            String    @unique
+    28→  email           String
+    29→  phone           String?
+    30→  address         String?
+    31→  city            String?
+    32→  state           String?
+    33→  zipCode         String?
+    34→  logo            String?
+    35→  active          Boolean   @default(true)
+    36→  deleted         Boolean   @default(false)
+    37→
+    38→  // Mercado Pago Integration
+    39→  mpEnabled       Boolean   @default(false)
+    40→  mpSandbox       Boolean   @default(true)
+    41→  mpAccessToken   String?   // ⚠ Sensitive — store encrypted at app level
+    42→  mpPublicKey     String?
+    43→  mpRefreshToken  String?   // ⚠ Sensitive — store encrypted at app level
+    44→  mpUserId        String?
+    45→  mpWebhookSecret String?   // ⚠ Sensitive — store encrypted at app level
+    46→
+    47→  // WhatsApp Integration (Z-API / Evolution API)
+    48→  waEnabled       Boolean   @default(false)
+    49→  waApiUrl        String?
+    50→  waApiToken      String?   // ⚠ Sensitive — store encrypted at app level
+    51→  waInstance      String?
+    52→  waPhone         String?
+    53→  waWebhookSecret String?   // ⚠ Sensitive — store encrypted at app level
+    54→
+    55→  createdAt       DateTime  @default(now())
+    56→  updatedAt       DateTime  @updatedAt
+    57→  version         Int       @default(0) // optimistic lock
+    58→
+    59→  users           User[]
+    60→  clients         Client[]
+    61→  serviceOrders   ServiceOrder[]
+    62→  parts           Part[]
+    63→  stockMovements  StockMovement[]
+    64→  financialEntries FinancialEntry[]
+    65→  subscriptions   Subscription[]
+    66→  invoices        Invoice[]
+    67→  invoiceItems    InvoiceItem[]
+    68→  suppliers       Supplier[]
+    69→  mechanics       Mechanic[]
+    70→  receptions      Reception[]
+    71→  notifications   Notification[]
+    72→  auditLogs       AuditLog[]
+    73→  aiChats         AIChat[]
+    74→  sales           Sale[]
+    75→  clientInvoices  ClientInvoice[]
+    76→  sefazConsultas  SefazConsulta[]
+    77→  certificadosDigitais CertificadoDigital[]
+    78→  manifestacoesDestinatario ManifestacaoDestinatario[]
+    79→  conhecimentosTransporte ConhecimentoTransporte[]
+    80→  nfseServicos    NfseServico[]
+    81→  spedRegistros   SpedRegistro[]
+    82→  fiscalAlertas   FiscalAlerta[]
+    83→  taxRules        TaxRule[]
+    84→  sequencers      Sequencer[]
+    85→  refreshTokens   RefreshToken[]
+    86→
+    87→  @@index([active, deleted])
+    88→  @@map("offices")
+    89→}
+    90→
+    91→model User {
+    92→  id           String   @id @default(cuid())
+    93→  email        String
+    94→  password     String   // bcrypt/argon2 hash — never plain-text
+    95→  name         String
+    96→  role         String   @default("EMPLOYEE") // ADMIN, OWNER, EMPLOYEE
+    97→  active       Boolean  @default(true)
+    98→  deleted      Boolean  @default(false)
+    99→  officeId     String
+   100→  office       Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   101→  createdAt    DateTime @default(now())
+   102→  updatedAt    DateTime @updatedAt
+   103→
+   104→  auditLogs      AuditLog[]
+   105→  refreshTokens  RefreshToken[]
+   106→
+   107→  @@unique([email, officeId])   // FIX: was global @unique — must be per-tenant
+   108→  @@index([officeId])
+   109→  @@index([active, deleted])
+   110→  @@map("users")
+   111→}
+   112→
+   113→// =============================================
+   114→// SEQUENCER — thread-safe counter per office per entity
+   115→// =============================================
+   116→
+   117→model Sequencer {
+   118→  id              String   @id @default(cuid())
+   119→  officeId        String
+   120→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Cascade)
+   121→  entity          String   // SERVICE_ORDER, SALE, CLIENT_INVOICE, etc.
+   122→  currentValue    Int      @default(0)
+   123→  prefix          String?  // optional prefix like "OS-"
+   124→  updatedAt       DateTime @updatedAt
+   125→
+   126→  @@unique([officeId, entity])
+   127→  @@map("sequencers")
+   128→}
+   129→
+   130→// =============================================
+   131→// CLIENTES & VEÍCULOS
+   132→// =============================================
+   133→
+   134→model Client {
+   135→  id           String   @id @default(cuid())
+   136→  name         String
+   137→  cpfCnpj      String?
+   138→  email        String?
+   139→  phone        String?
+   140→  address      String?
+   141→  city         String?
+   142→  state        String?
+   143→  zipCode      String?
+   144→  deleted      Boolean  @default(false)
+   145→  officeId     String
+   146→  office       Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   147→  createdAt    DateTime @default(now())
+   148→  updatedAt    DateTime @updatedAt
+   149→
+   150→  vehicles     Vehicle[]
+   151→  serviceOrders ServiceOrder[]
+   152→  sales        Sale[]
+   153→  clientInvoices ClientInvoice[]
+   154→  nfseServicos   NfseServico[]
+   155→
+   156→  @@unique([cpfCnpj, officeId])   // FIX: prevent duplicate CPF/CNPJ per tenant
+   157→  @@index([officeId])
+   158→  @@index([name])
+   159→  @@index([deleted])
+   160→  @@map("clients")
+   161→}
+   162→
+   163→model Vehicle {
+   164→  id           String   @id @default(cuid())
+   165→  plate        String
+   166→  brand        String?
+   167→  model        String?
+   168→  year         Int?
+   169→  color        String?
+   170→  km           Int?
+   171→  chassi       String?
+   172→  deleted      Boolean  @default(false)
+   173→  clientId     String
+   174→  client       Client   @relation(fields: [clientId], references: [id], onDelete: Restrict) // FIX: was Cascade
+   175→  officeId     String
+   176→  createdAt    DateTime @default(now())
+   177→  updatedAt    DateTime @updatedAt
+   178→
+   179→  serviceOrders ServiceOrder[]
+   180→
+   181→  @@unique([plate, officeId])     // FIX: plates unique per tenant
+   182→  @@index([clientId])
+   183→  @@index([officeId])
+   184→  @@map("vehicles")
+   185→}
+   186→
+   187→// =============================================
+   188→// ORDEM DE SERVIÇO
+   189→// =============================================
+   190→
+   191→model ServiceOrder {
+   192→  id              String   @id @default(cuid())
+   193→  number          String
+   194→  status          String   @default("ABERTA") // ABERTA, EM_EXECUCAO, FINALIZADA, PAGA, CANCELADA
+   195→  description     String?
+   196→  diagnosis       String?
+   197→  totalParts      Decimal  @default(0) // FIX: Float→Decimal
+   198→  totalServices   Decimal  @default(0)
+   199→  totalDiscount   Decimal  @default(0)
+   200→  totalAmount     Decimal  @default(0)
+   201→  paymentMethod   String?  // PIX, CARTAO, DINHEIRO
+   202→  paidAt          DateTime?
+   203→  deleted         Boolean  @default(false)
+   204→  clientId        String
+   205→  client          Client   @relation(fields: [clientId], references: [id], onDelete: Restrict) // FIX
+   206→  vehicleId       String
+   207→  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Restrict) // FIX
+   208→  officeId        String
+   209→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   210→  createdAt       DateTime @default(now())
+   211→  updatedAt       DateTime @updatedAt
+   212→  version         Int      @default(0) // optimistic lock
+   213→
+   214→  items           ServiceOrderItem[]
+   215→  notifications   Notification[]
+   216→  clientInvoices  ClientInvoice[]
+   217→
+   218→  @@unique([number, officeId])    // FIX: was global @unique
+   219→  @@index([officeId])
+   220→  @@index([clientId])
+   221→  @@index([vehicleId])
+   222→  @@index([status])
+   223→  @@index([createdAt])
+   224→  @@index([officeId, status])
+   225→  @@map("service_orders")
+   226→}
+   227→
+   228→model ServiceOrderItem {
+   229→  id              String      @id @default(cuid())
+   230→  type            String      // SERVICO, PECA
+   231→  description     String
+   232→  quantity        Decimal     @default(1) // FIX: Float→Decimal
+   233→  unitPrice       Decimal    
+   234→  totalPrice      Decimal    
+   235→  commissionPct   Decimal     @default(0)
+   236→  commissionValue Decimal     @default(0)
+   237→  partId          String?
+   238→  mechanicId      String?
+   239→  mechanic        Mechanic?   @relation(fields: [mechanicId], references: [id], onDelete: SetNull) // FIX
+   240→  deleted         Boolean     @default(false)
+   241→  serviceOrderId  String
+   242→  serviceOrder    ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+   243→  officeId        String      // FIX: was missing — needed for tenant-scoped queries
+   244→  createdAt       DateTime    @default(now())
+   245→  updatedAt       DateTime    @updatedAt
+   246→
+   247→  @@index([serviceOrderId])
+   248→  @@index([mechanicId])
+   249→  @@index([officeId])
+   250→  @@map("service_order_items")
+   251→}
+   252→
+   253→// =============================================
+   254→// MECÂNICOS & COMISSÕES
+   255→// =============================================
+   256→
+   257→model Mechanic {
+   258→  id              String   @id @default(cuid())
+   259→  name            String
+   260→  cpf             String?
+   261→  phone           String?
+   262→  email           String?
+   263→  specialty       String?
+   264→  commissionPct   Decimal  @default(0) // FIX: Float→Decimal
+   265→  active          Boolean   @default(true)
+   266→  deleted         Boolean  @default(false)
+   267→  officeId        String
+   268→  office          Office    @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   269→  createdAt       DateTime  @default(now())
+   270→  updatedAt       DateTime  @updatedAt
+   271→
+   272→  serviceItems    ServiceOrderItem[]
+   273→
+   274→  @@unique([cpf, officeId])       // FIX: CPF unique per tenant
+   275→  @@index([officeId])
+   276→  @@index([active, deleted])
+   277→  @@map("mechanics")
+   278→}
+   279→
+   280→// =============================================
+   281→// ESTOQUE
+   282→// =============================================
+   283→
+   284→model Part {
+   285→  id              String   @id @default(cuid())
+   286→  sku             String
+   287→  description     String
+   288→  ncm             String?   // Nomenclatura Comum do Mercosul
+   289→  cfop            String?   // Código Fiscal de Operações e Prestações
+   290→  unit            String    @default("UN")
+   291→  quantity        Decimal  @default(0) // FIX: Float→Decimal — prevents rounding on stock
+   292→  minQuantity     Decimal  @default(0)
+   293→  costPrice       Decimal  @default(0) // FIX: Float→Decimal
+   294→  salePrice       Decimal  @default(0)
+   295→  location        String?
+   296→  batch           String?
+   297→  validity        DateTime?
+   298→  cst             String?
+   299→  csosn           String?
+   300→  deleted         Boolean  @default(false)
+   301→  officeId        String
+   302→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   303→  supplierId      String?
+   304→  supplier        Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull) // FIX
+   305→  createdAt       DateTime @default(now())
+   306→  updatedAt       DateTime @updatedAt
+   307→  version         Int      @default(0) // optimistic lock for stock updates
+   308→
+   309→  stockMovements  StockMovement[]
+   310→  invoiceItems    InvoiceItem[]
+   311→
+   312→  @@unique([sku, officeId])
+   313→  @@index([officeId])
+   314→  @@index([supplierId])
+   315→  @@index([description])
+   316→  @@index([ncm])
+   317→  @@map("parts")
+   318→}
+   319→
+   320→model StockMovement {
+   321→  id              String   @id @default(cuid())
+   322→  type            String   // ENTRADA, SAIDA
+   323→  quantity        Decimal  // FIX: Float→Decimal
+   324→  unitCost        Decimal  @default(0)
+   325→  reason          String?
+   326→  reference       String?
+   327→  deleted         Boolean  @default(false)
+   328→  partId          String
+   329→  part            Part     @relation(fields: [partId], references: [id], onDelete: Restrict) // FIX: was no onDelete
+   330→  officeId        String
+   331→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   332→  createdAt       DateTime @default(now())
+   333→
+   334→  @@index([partId])
+   335→  @@index([officeId])
+   336→  @@index([type])
+   337→  @@index([createdAt])
+   338→  @@map("stock_movements")
+   339→}
+   340→
+   341→// =============================================
+   342→// FORNECEDORES
+   343→// =============================================
+   344→
+   345→model Supplier {
+   346→  id              String   @id @default(cuid())
+   347→  cnpj            String
+   348→  razaoSocial     String
+   349→  nomeFantasia    String?
+   350→  email           String?
+   351→  phone           String?
+   352→  address         String?
+   353→  city            String?
+   354→  state           String?
+   355→  zipCode         String?
+   356→  ie              String?  // Inscrição Estadual
+   357→  deleted         Boolean  @default(false)
+   358→  officeId        String
+   359→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   360→  createdAt       DateTime @default(now())
+   361→  updatedAt       DateTime @updatedAt
+   362→
+   363→  paymentTerms    Int      @default(30)
+   364→  parts           Part[]
+   365→  invoices        Invoice[]
+   366→  financialEntries FinancialEntry[]
+   367→  conhecimentosTransporte ConhecimentoTransporte[]
+   368→
+   369→  @@unique([cnpj, officeId])
+   370→  @@index([officeId])
+   371→  @@index([razaoSocial])
+   372→  @@map("suppliers")
+   373→}
+   374→
+   375→// =============================================
+   376→// NOTA FISCAL ELETRÔNICA (NF-e)
+   377→// =============================================
+   378→
+   379→model Invoice {
+   380→  id              String   @id @default(cuid())
+   381→  chave           String   @unique // Chave de acesso 44 dígitos
+   382→  numero          String
+   383→  serie           String
+   384→  tipoOperacao    String   @default("ENTRADA") // ENTRADA, RETORNO
+   385→  naturezaOperacao String? // FIX: natOp — required by SEFAZ on output NF-e
+   386→  modelo          String   @default("55") // FIX: NF-e modelo 55
+   387→  finalidade      String   @default("1") // FIX: finNFe — 1=Normal,2=Complementar,3=Ajuste,4=Devolução
+   388→  formaPagamento  String   @default("0") // FIX: indPag — 0=Vista,1=Prazo,2=Outros
+   389→  consumidorFinal String   @default("1") // FIX: indFinal — 0=Não,1=Consumidor final
+   390→  dataEmissao     DateTime
+   391→  dataEntrada     DateTime?
+   392→  subtotal        Decimal  @default(0) // FIX: Float→Decimal
+   393→  frete           Decimal  @default(0)
+   394→  seguro          Decimal  @default(0)
+   395→  desconto        Decimal  @default(0)
+   396→  outrasDespesas  Decimal  @default(0) // FIX: vOutro — NF-e total
+   397→  baseIcms        Decimal  @default(0)
+   398→  valorIcms       Decimal  @default(0)
+   399→  baseIcmsSt      Decimal  @default(0) // FIX: vBCST
+   400→  valorIcmsSt     Decimal  @default(0) // FIX: vICMSST
+   401→  valorIpi        Decimal  @default(0)
+   402→  valorPis        Decimal  @default(0)
+   403→  valorCofins     Decimal  @default(0)
+   404→  totalNf         Decimal  @default(0)
+   405→  xmlContent      String?
+   406→  status          String   @default("IMPORTADA")
+   407→  observacao      String?
+   408→  deleted         Boolean  @default(false)
+   409→
+   410→  // Destinatário (when this is an output NF-e)
+   411→  destCpfCnpj     String?   // FIX: destinatário data for output NF-e
+   412→  destNome        String?
+   413→  destEndereco    String?
+   414→  destCidade      String?
+   415→  destEstado      String?
+   416→  destCep         String?
+   417→  destTelefone    String?
+   418→  destEmail       String?
+   419→  destIe          String?   // Inscrição Estadual do destinatário
+   420→
+   421→  // Transporte
+   422→  modFrete        String?   @default("0") // FIX: 0=Por conta remetente,1=Por conta destinatário,2=Por conta terceiros,9=Sem frete
+   423→  transportadoraCnpj String?
+   424→  transportadoraNome String?
+   425→  veiculoPlaca    String?
+   426→  veiculoUf       String?
+   427→  volumes         String?   // FIX: JSON array of volumes
+   428→
+   429→  // Duplicatas (financial titles)
+   430→  duplicatas      String?   // FIX: JSON array of {nDup, dVenc, vDup}
+   431→
+   432→  supplierId      String
+   433→  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict) // FIX
+   434→  officeId        String
+   435→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   436→  createdAt       DateTime @default(now())
+   437→  updatedAt       DateTime @updatedAt
+   438→
+   439→  items           InvoiceItem[]
+   440→  reception       Reception?
+   441→  auditLogs       AuditLog[]
+   442→  financialEntries FinancialEntry[]
+   443→
+   444→  @@index([officeId])
+   445→  @@index([supplierId])
+   446→  @@index([status])
+   447→  @@index([dataEmissao])
+   448→  @@index([officeId, status])
+   449→  @@map("invoices")
+   450→}
+   451→
+   452→model InvoiceItem {
+   453→  id              String   @id @default(cuid())
+   454→  sku             String?
+   455→  descricao       String
+   456→  ncm             String
+   457→  cfop            String
+   458→  cst             String?
+   459→  csosn           String?
+   460→  quantidade      Decimal  // FIX: Float→Decimal
+   461→  unidade         String   @default("UN")
+   462→  valorUnitario   Decimal 
+   463→  valorTotal      Decimal 
+   464→  baseIcms        Decimal  @default(0)
+   465→  valorIcms       Decimal  @default(0)
+   466→  baseIcmsSt      Decimal  @default(0) // FIX: vBCST
+   467→  valorIcmsSt     Decimal  @default(0) // FIX: vICMSST
+   468→  percIcmsSt      Decimal  @default(0) // FIX: pICMSST
+   469→  mvast           Decimal  @default(0) // FIX: pMVAST
+   470→  valorIpi        Decimal  @default(0)
+   471→  percIpi         Decimal  @default(0) // FIX: pIPI
+   472→  cstIpi          String?   // FIX: CST IPI
+   473→  valorPis        Decimal  @default(0)
+   474→  cstPis          String?   // FIX: CST PIS
+   475→  valorCofins     Decimal  @default(0)
+   476→  cstCofins       String?   // FIX: CST COFINS
+   477→  fci             String?   // FIX: nFCI
+   478→  lote            String?
+   479→  validade        DateTime?
+   480→  localizacao     String?
+   481→  divergencia     Boolean  @default(false)
+   482→  deleted         Boolean  @default(false)
+   483→  invoiceId       String
+   484→  invoice         Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+   485→  partId          String?
+   486→  part            Part?    @relation(fields: [partId], references: [id], onDelete: SetNull) // FIX
+   487→  officeId        String
+   488→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   489→  createdAt       DateTime @default(now())
+   490→
+   491→  @@index([invoiceId])
+   492→  @@index([partId])
+   493→  @@index([officeId])
+   494→  @@map("invoice_items")
+   495→}
+   496→
+   497→// =============================================
+   498→// CONFERÊNCIA / RECEBIMENTO
+   499→// =============================================
+   500→
+   501→model Reception {
+   502→  id              String   @id @default(cuid())
+   503→  status          String   @default("PENDENTE") // PENDENTE, CONFERIDA, DIVERGENTE, BLOQUEADA
+   504→  divergencia     String?
+   505→  quantidadeRecebida Decimal? // FIX: Float→Decimal
+   506→  conferidoPor    String?
+   507→  observacao      String?
+   508→  deleted         Boolean  @default(false)
+   509→  invoiceId       String   @unique
+   510→  invoice         Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict) // FIX
+   511→  officeId        String
+   512→  createdAt       DateTime @default(now())
+   513→  updatedAt       DateTime @updatedAt
+   514→
+   515→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   516→
+   517→  @@index([officeId])
+   518→  @@index([status])
+   519→  @@map("receptions")
+   520→}
+   521→
+   522→// =============================================
+   523→// FINANCEIRO
+   524→// =============================================
+   525→
+   526→model FinancialEntry {
+   527→  id              String   @id @default(cuid())
+   528→  type            String   // PAGAR, RECEBER
+   529→  category        String?  // ASSINATURA, OS, NF, OUTROS
+   530→  description     String
+   531→  amount          Decimal  // FIX: Float→Decimal
+   532→  discount        Decimal  @default(0)
+   533→  interest        Decimal  @default(0)
+   534→  totalAmount     Decimal 
+   535→  status          String   @default("PENDENTE") // PENDENTE, PAGO, ATRASADO, CANCELADO
+   536→  dueDate         DateTime
+   537→  paymentDate     DateTime?
+   538→  paymentMethod   String?
+   539→  reference       String?
+   540→  deleted         Boolean  @default(false)
+   541→  invoiceId       String?
+   542→  invoice         Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull) // FIX
+   543→  supplierId      String?
+   544→  supplier        Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull) // FIX
+   545→  saleId          String?
+   546→  sale            Sale?     @relation(fields: [saleId], references: [id], onDelete: SetNull) // FIX
+   547→  officeId        String
+   548→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   549→  createdAt       DateTime @default(now())
+   550→  updatedAt       DateTime @updatedAt
+   551→
+   552→  @@index([officeId])
+   553→  @@index([status])
+   554→  @@index([type])
+   555→  @@index([dueDate])
+   556→  @@index([officeId, status])
+   557→  @@index([officeId, type, status])
+   558→  @@index([supplierId])
+   559→  @@index([saleId])
+   560→  @@index([invoiceId])
+   561→  @@map("financial_entries")
+   562→}
+   563→
+   564→// =============================================
+   565→// ASSINATURAS & PLANOS
+   566→// =============================================
+   567→
+   568→model Subscription {
+   569→  id              String   @id @default(cuid())
+   570→  plan            String   @default("FREE") // FREE, PRO, PRO_PLUS, PREMIUM
+   571→  status          String   @default("ATIVA") // ATIVA, INADIMPLENTE, CANCELADA, TRIAL
+   572→  subscriptionCode String? @unique
+   573→  startDate       DateTime
+   574→  endDate         DateTime?
+   575→  trialEndDate    DateTime?
+   576→  monthlyPrice    Decimal  @default(0) // FIX: Float→Decimal
+   577→  currentPeriodStart DateTime?
+   578→  currentPeriodEnd   DateTime?
+   579→  deleted         Boolean  @default(false)
+   580→  officeId        String
+   581→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   582→  createdAt       DateTime @default(now())
+   583→  updatedAt       DateTime @updatedAt
+   584→
+   585→  // Mercado Pago - Subscription Payment
+   586→  mpPreferenceId  String?
+   587→  mpPaymentId     String?
+   588→  mpStatus        String?
+   589→
+   590→  // SECURITY FIX (#74): Removed @@unique([officeId]) — conflicts with soft-delete.
+   591→  // Uniqueness is now enforced at the application level (see POST /api/subscriptions).
+   592→  @@index([status])
+   593→  @@map("subscriptions")
+   594→}
+   595→
+   596→// =============================================
+   597→// NOTIFICAÇÕES
+   598→// =============================================
+   599→
+   600→model Notification {
+   601→  id              String   @id @default(cuid())
+   602→  type            String   // WHATSAPP, EMAIL, SYSTEM
+   603→  template        String?
+   604→  title           String
+   605→  message         String
+   606→  recipient       String?
+   607→  status          String   @default("PENDENTE") // PENDENTE, ENVIADA, FALHOU
+   608→  sentAt          DateTime?
+   609→  serviceOrderId  String?
+   610→  serviceOrder    ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: SetNull) // FIX
+   611→  officeId        String
+   612→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   613→  createdAt       DateTime @default(now())
+   614→
+   615→  @@index([officeId])
+   616→  @@index([status])
+   617→  @@index([serviceOrderId])
+   618→  @@index([createdAt])
+   619→  @@map("notifications")
+   620→}
+   621→
+   622→// =============================================
+   623→// AUDITORIA
+   624→// =============================================
+   625→
+   626→model AuditLog {
+   627→  id              String   @id @default(cuid())
+   628→  action          String   // CREATE, UPDATE, DELETE, LOGIN, etc.
+   629→  entity          String
+   630→  entityId        String?
+   631→  details         String?  // JSON com detalhes
+   632→  oldValues       String?  // FIX: snapshot of values before change
+   633→  newValues       String?  // FIX: snapshot of values after change
+   634→  userId          String?
+   635→  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull) // FIX
+   636→  officeId        String
+   637→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   638→  invoiceId       String?
+   639→  invoice         Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull) // FIX
+   640→  ipAddress       String?  // FIX: audit IP address
+   641→  userAgent       String?  // FIX: audit user-agent
+   642→  createdAt       DateTime @default(now())
+   643→
+   644→  @@index([officeId])
+   645→  @@index([entity])
+   646→  @@index([entityId])
+   647→  @@index([userId])
+   648→  @@index([createdAt])
+   649→  @@index([officeId, entity, createdAt])
+   650→  @@map("audit_logs")
+   651→}
+   652→
+   653→// =============================================
+   654→// IMPOSTOS (Regras Fiscais por NCM/CFOP)
+   655→// =============================================
+   656→
+   657→model TaxRule {
+   658→  id              String   @id @default(cuid())
+   659→  ncm             String
+   660→  cfop            String
+   661→  cst             String?
+   662→  csosn           String?
+   663→  aliqIcms        Decimal  @default(0) // FIX: Float→Decimal
+   664→  aliqIpi         Decimal  @default(0)
+   665→  aliqPis         Decimal  @default(0)
+   666→  aliqCofins      Decimal  @default(0)
+   667→  state           String   @default("BA")
+   668→  active          Boolean  @default(true)
+   669→  officeId        String   // FIX: was missing — CRITICAL multi-tenancy breach
+   670→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Cascade) // cascade ok for system data
+   671→  createdAt       DateTime @default(now())
+   672→  updatedAt       DateTime @updatedAt
+   673→
+   674→  @@unique([ncm, cfop, state, officeId])   // FIX: scoped per tenant
+   675→  @@index([officeId])
+   676→  @@index([ncm])
+   677→  @@map("tax_rules")
+   678→}
+   679→
+   680→// =============================================
+   681→// ASSISTENTE IA (Chat)
+   682→// =============================================
+   683→
+   684→model AIChat {
+   685→  id              String   @id @default(cuid())
+   686→  officeId        String
+   687→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   688→  userId          String?
+   689→  type            String   @default("GERAL") // DIAGNOSTICO, SUGESTAO_SERVICO, EXPLICACAO_CLIENTE, AUXILIO_FINANCEIRO, GERAL
+   690→  message         String
+   691→  response        String
+   692→  context         String?
+   693→  confirmed       Boolean  @default(false)
+   694→  deleted         Boolean  @default(false) // FIX: was missing
+   695→  createdAt       DateTime @default(now())
+   696→
+   697→  @@index([officeId])
+   698→  @@index([createdAt])
+   699→  @@map("ai_chats")
+   700→}
+   701→
+   702→// =============================================
+   703→// NOTA FISCAL DE SAÍDA (para clientes)
+   704→// =============================================
+   705→
+   706→model ClientInvoice {
+   707→  id              String   @id @default(cuid())
+   708→  number          String
+   709→  type            String   // VENDA (PDV), SERVICO (OS)
+   710→  status          String   @default("EMITIDA") // EMITIDA, CANCELADA
+   711→  dataEmissao     DateTime @default(now())
+   712→  dataCancelamento DateTime?
+   713→
+   714→  // Chave de acesso (output NF-e)
+   715→  chave           String?  // FIX: missing — 44-digit chave for issued NF-e
+   716→  serie           String?  // FIX: missing — série da NF-e
+   717→  naturezaOperacao String? // FIX: natOp — required by SEFAZ
+   718→  modelo          String   @default("55") // FIX: NF-e modelo
+   719→  finalidade      String   @default("1") // FIX: finNFe
+   720→  formaPagamento  String   @default("0") // FIX: indPag
+   721→  consumidorFinal String   @default("1") // FIX: indFinal
+   722→
+   723→  // Destinatário (cliente)
+   724→  destNome        String
+   725→  destCpfCnpj     String?
+   726→  destEndereco    String?
+   727→  destCidade      String?
+   728→  destEstado      String?
+   729→  destCep         String?
+   730→  destTelefone    String?
+   731→  destEmail       String?
+   732→  destIe          String?  // FIX: IE do destinatário
+   733→
+   734→  // Veículo (para NF de serviço)
+   735→  veiculoPlaca    String?
+   736→  veiculoModelo   String?
+   737→  veiculoAno      Int?
+   738→  veiculoCor      String?
+   739→
+   740→  // Totais
+   741→  subtotal        Decimal  @default(0) // FIX: Float→Decimal
+   742→  desconto        Decimal  @default(0)
+   743→  totalAmount     Decimal  @default(0)
+   744→
+   745→  // Impostos
+   746→  baseIcms        Decimal  @default(0)
+   747→  valorIcms       Decimal  @default(0)
+   748→  baseIcmsSt      Decimal  @default(0) // FIX
+   749→  valorIcmsSt     Decimal  @default(0) // FIX
+   750→  valorIpi        Decimal  @default(0)
+   751→  valorPis        Decimal  @default(0)
+   752→  valorCofins     Decimal  @default(0)
+   753→
+   754→  // Transporte
+   755→  modFrete        String?   @default("9") // FIX
+   756→  transportadoraCnpj String? // FIX
+   757→  transportadoraNome String? // FIX
+   758→  veiculoPlacaTransp String? // FIX
+   759→  volumes         String?   // FIX: JSON
+   760→
+   761→  // Duplicatas
+   762→  duplicatas      String?   // FIX: JSON array
+   763→
+   764→  observacao      String?
+   765→  motivoCancelamento String?
+   766→  protocoloAutorizacao String? // FIX: protocolo de autorização SEFAZ
+   767→
+   768→  // Relations to source documents
+   769→  saleId          String?
+   770→  sale            Sale?    @relation(fields: [saleId], references: [id], onDelete: SetNull) // FIX
+   771→  serviceOrderId  String?
+   772→  serviceOrder    ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: SetNull) // FIX
+   773→
+   774→  deleted         Boolean  @default(false)
+   775→  officeId        String
+   776→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   777→  clientId        String?
+   778→  client          Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull) // FIX
+   779→  createdAt       DateTime @default(now())
+   780→  updatedAt       DateTime @updatedAt
+   781→
+   782→  items           ClientInvoiceItem[]
+   783→
+   784→  @@unique([number, officeId])    // FIX: was global @unique
+   785→  @@index([officeId])
+   786→  @@index([clientId])
+   787→  @@index([status])
+   788→  @@index([dataEmissao])
+   789→  @@index([chave])
+   790→  @@map("client_invoices")
+   791→}
+   792→
+   793→model ClientInvoiceItem {
+   794→  id              String   @id @default(cuid())
+   795→  tipo            String   // PRODUTO, SERVICO
+   796→  descricao       String
+   797→  quantidade      Decimal  // FIX: Float→Decimal
+   798→  unidade         String   @default("UN")
+   799→  valorUnitario   Decimal 
+   800→  valorTotal      Decimal 
+   801→  ncm             String?
+   802→  cfop            String?
+   803→  cst             String?
+   804→  csosn           String?
+   805→  baseIcms        Decimal  @default(0)
+   806→  valorIcms       Decimal  @default(0)
+   807→  baseIcmsSt      Decimal  @default(0) // FIX
+   808→  valorIcmsSt     Decimal  @default(0) // FIX
+   809→  valorIpi        Decimal  @default(0)
+   810→  valorPis        Decimal  @default(0)
+   811→  valorCofins     Decimal  @default(0)
+   812→  cstIpi          String?   // FIX
+   813→  cstPis          String?   // FIX
+   814→  cstCofins       String?   // FIX
+   815→  fci             String?   // FIX
+   816→  partId          String?
+   817→
+   818→  clientInvoiceId String
+   819→  clientInvoice   ClientInvoice @relation(fields: [clientInvoiceId], references: [id], onDelete: Cascade)
+   820→
+   821→  deleted         Boolean  @default(false)
+   822→  officeId        String   // FIX: was missing
+   823→  createdAt       DateTime @default(now())
+   824→
+   825→  @@index([clientInvoiceId])
+   826→  @@index([partId])
+   827→  @@index([officeId])
+   828→  @@map("client_invoice_items")
+   829→}
+   830→
+   831→// =============================================
+   832→// SEED DATA
+   833→// =============================================
+   834→
+   835→model SeedControl {
+   836→  id              String   @id @default(cuid())
+   837→  module          String   @unique
+   838→  seeded          Boolean  @default(false)
+   839→  createdAt       DateTime @default(now())
+   840→
+   841→  // NOTE: No officeId — this is system-level control, not tenant data
+   842→  @@map("seed_control")
+   843→}
+   844→
+   845→// =============================================
+   846→// PDV - VENDAS AVULSAS (balcão)
+   847→// =============================================
+   848→
+   849→model Sale {
+   850→  id              String   @id @default(cuid())
+   851→  number          String
+   852→  status          String   @default("ABERTA") // ABERTA, PAGA, CANCELADA
+   853→  discount        Decimal  @default(0) // FIX: Float→Decimal
+   854→  totalAmount     Decimal  @default(0)
+   855→  paymentMethod   String?
+   856→  paidAt          DateTime?
+   857→  obs             String?
+   858→  deleted         Boolean  @default(false)
+   859→  clientId        String?
+   860→  client          Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull) // FIX
+   861→  officeId        String
+   862→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   863→  createdAt       DateTime @default(now())
+   864→  updatedAt       DateTime @updatedAt
+   865→
+   866→  items           SaleItem[]
+   867→  financialEntries FinancialEntry[]
+   868→  clientInvoices  ClientInvoice[]
+   869→
+   870→  @@unique([number, officeId])    // FIX: was global @unique
+   871→  @@index([officeId])
+   872→  @@index([clientId])
+   873→  @@index([status])
+   874→  @@index([createdAt])
+   875→  @@map("sales")
+   876→}
+   877→
+   878→model SaleItem {
+   879→  id              String   @id @default(cuid())
+   880→  description     String
+   881→  quantity        Decimal  @default(1) // FIX: Float→Decimal
+   882→  unitPrice       Decimal 
+   883→  totalPrice      Decimal 
+   884→  partId          String?
+   885→  deleted         Boolean  @default(false)
+   886→  saleId          String
+   887→  sale            Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+   888→  officeId        String   // FIX: was missing
+   889→  createdAt       DateTime @default(now())
+   890→  updatedAt       DateTime @updatedAt
+   891→
+   892→  @@index([saleId])
+   893→  @@index([partId])
+   894→  @@index([officeId])
+   895→  @@map("sale_items")
+   896→}
+   897→
+   898→// =============================================
+   899→// SEFAZ - INTEGRAÇÃO CONSULTA NF-e
+   900→// =============================================
+   901→
+   902→model SefazConsulta {
+   903→  id              String   @id @default(cuid())
+   904→  chave           String   // Chave de acesso 44 dígitos
+   905→  ambiente        String   // HOMOLOGACAO, PRODUCAO
+   906→  protocolo       String?
+   907→  status          String   // AUTORIZADA, CANCELADA, DENEGADA, INUTILIZADA, NAO_ENCONTRADA, ERRO
+   908→  fornecedorCnpj  String?
+   909→  xmlArmazenado   Boolean  @default(false)
+   910→  xmlContent      String?
+   911→  codigoStatus    String?
+   912→  motivoStatus    String?
+   913→  tempoResposta   Int?
+   914→  tentativas      Int      @default(1)
+   915→  erroMensagem    String?
+   916→  erroAmigavel    String?
+   917→  officeId        String
+   918→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   919→  usuarioId       String?
+   920→  invoiceId       String?
+   921→  deleted         Boolean  @default(false) // FIX: was missing
+   922→  createdAt       DateTime @default(now())
+   923→
+   924→  @@index([chave])
+   925→  @@index([officeId])
+   926→  @@index([status])
+   927→  @@map("sefaz_consultas")
+   928→}
+   929→
+   930→model CertificadoDigital {
+   931→  id              String   @id @default(cuid())
+   932→  nomeArquivo     String
+   933→  arquivoContent  String   // Conteúdo PFX em base64 (app-level AES-256-GCM encrypted)
+   934→  senhaCriptografada String // AES-256-GCM encrypted via certificate.ts
+   935→  validade        DateTime?
+   936→  ativo           Boolean  @default(true)
+   937→  ambiente        String   @default("HOMOLOGACAO")
+   938→  uf              String   @default("BA")
+   939→  cnpjCpf         String?
+   940→  razaoSocial     String?
+   941→  deleted         Boolean  @default(false)
+   942→  officeId        String
+   943→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   944→  createdAt       DateTime @default(now())
+   945→  updatedAt       DateTime @updatedAt
+   946→
+   947→  @@index([officeId])
+   948→  @@index([ativo])
+   949→  @@index([validade]) // FIX: for expiry queries
+   950→  @@map("certificados_digitais")
+   951→}
+   952→
+   953→// =============================================
+   954→// MANIFESTAÇÃO DO DESTINATÁRIO
+   955→// =============================================
+   956→
+   957→model ManifestacaoDestinatario {
+   958→  id              String   @id @default(cuid())
+   959→  chave           String
+   960→  tipoEvento      String
+   961→  codigoEvento    String
+   962→  protocolo       String?
+   963→  dataEvento      DateTime
+   964→  justificativa   String?
+   965→  status          String   @default("PENDENTE")
+   966→  codigoRetorno   String?
+   967→  motivoRetorno   String?
+   968→  tentativas      Int      @default(1)
+   969→  erroMensagem    String?
+   970→  officeId        String
+   971→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+   972→  usuarioId       String?
+   973→  deleted         Boolean  @default(false) // FIX: was missing
+   974→  createdAt       DateTime @default(now())
+   975→  updatedAt       DateTime @updatedAt
+   976→
+   977→  @@index([chave])
+   978→  @@index([officeId])
+   979→  @@index([tipoEvento])
+   980→  @@index([status]) // FIX
+   981→  @@map("manifestacoes_destinatario")
+   982→}
+   983→
+   984→// =============================================
+   985→// CONHECIMENTO DE TRANSPORTE ELETRÔNICO (CT-e)
+   986→// =============================================
+   987→
+   988→model ConhecimentoTransporte {
+   989→  id                String   @id @default(cuid())
+   990→  chave             String   @unique
+   991→  numero            String
+   992→  serie             String
+   993→  dataEmissao       DateTime
+   994→  tipoCte           String   @default("CTE")
+   995→  modal             String?
+   996→  naturezaOperacao  String?
+   997→  emitenteCnpj      String
+   998→  emitenteRazao     String
+   999→  destinatarioCnpj  String?
+  1000→  destinatarioRazao String?
+  1001→  valorTotal        Decimal  @default(0) // FIX: Float→Decimal
+  1002→  valorImpostos     Decimal  @default(0)
+  1003→  xmlContent        String?
+  1004→  status            String   @default("IMPORTADA")
+  1005→  nfeVinculadas     String?
+  1006→  observacao        String?
+  1007→  deleted           Boolean  @default(false)
+  1008→  officeId          String
+  1009→  office            Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  1010→  supplierId        String?
+  1011→  supplier          Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull) // FIX
+  1012→  createdAt         DateTime @default(now())
+  1013→  updatedAt         DateTime @updatedAt
+  1014→
+  1015→  @@index([chave])
+  1016→  @@index([officeId])
+  1017→  @@index([emitenteCnpj])
+  1018→  @@index([status]) // FIX
+  1019→  @@map("conhecimentos_transporte")
+  1020→}
+  1021→
+  1022→// =============================================
+  1023→// NOTA FISCAL DE SERVIÇOS ELETRÔNICA (NFS-e)
+  1024→// =============================================
+  1025→
+  1026→model NfseServico {
+  1027→  id              String   @id @default(cuid())
+  1028→  numero          String
+  1029→  codigoVerificacao String?
+  1030→  dataEmissao     DateTime @default(now())
+  1031→  competencia     String?
+  1032→  tipoTributacao  String   @default("ISSQN")
+  1033→  itemListaServico String?
+  1034→  discriminacao   String
+  1035→  valorServicos   Decimal  @default(0) // FIX: Float→Decimal
+  1036→  valorDeducoes   Decimal  @default(0)
+  1037→  valorIssqn      Decimal  @default(0)
+  1038→  valorPis        Decimal  @default(0)
+  1039→  valorCofins     Decimal  @default(0)
+  1040→  valorIr         Decimal  @default(0)
+  1041→  valorCsll       Decimal  @default(0)
+  1042→  valorInss       Decimal  @default(0)
+  1043→  valorTotal      Decimal  @default(0)
+  1044→  baseCalculo     Decimal  @default(0)
+  1045→  aliqIssqn       Decimal  @default(0)
+  1046→  clienteCpfCnpj  String?
+  1047→  clienteNome     String?
+  1048→  clienteEndereco String?
+  1049→  clienteEmail    String?
+  1050→  status          String   @default("EMITIDA")
+  1051→  motivoCancelamento String?
+  1052→  xmlContent      String?
+  1053→  deleted         Boolean  @default(false)
+  1054→  officeId        String
+  1055→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  1056→  clientId        String?
+  1057→  client          Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull) // FIX
+  1058→  serviceOrderId  String?
+  1059→  saleId          String?
+  1060→  createdAt       DateTime @default(now())
+  1061→  updatedAt       DateTime @updatedAt
+  1062→
+  1063→  @@index([officeId])
+  1064→  @@index([numero])
+  1065→  @@index([dataEmissao])
+  1066→  @@index([status]) // FIX
+  1067→  @@index([competencia]) // FIX
+  1068→  @@map("nfse_servicos")
+  1069→}
+  1070→
+  1071→// =============================================
+  1072→// SPED FISCAL
+  1073→// =============================================
+  1074→
+  1075→model SpedRegistro {
+  1076→  id              String   @id @default(cuid())
+  1077→  periodo         String   // AAAAMM
+  1078→  bloco           String
+  1079→  registro        String
+  1080→  linha           String
+  1081→  ordem           Int      @default(0)
+  1082→  officeId        String
+  1083→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  1084→  createdAt       DateTime @default(now())
+  1085→
+  1086→  @@index([officeId, periodo])
+  1087→  @@index([bloco])
+  1088→  @@index([registro]) // FIX: for querying specific record types
+  1089→  @@map("sped_registros")
+  1090→}
+  1091→
+  1092→// =============================================
+  1093→// ALERTAS FISCAIS
+  1094→// =============================================
+  1095→
+  1096→model FiscalAlerta {
+  1097→  id              String   @id @default(cuid())
+  1098→  tipo            String
+  1099→  severidade      String   @default("AVISO")
+  1100→  titulo          String
+  1101→  descricao       String
+  1102→  dados           String?
+  1103→  referenciaId    String?
+  1104→  referenciaTipo  String?
+  1105→  lido            Boolean  @default(false)
+  1106→  resolvido       Boolean  @default(false)
+  1107→  dataVencimento  DateTime?
+  1108→  officeId        String
+  1109→  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  1110→  createdAt       DateTime @default(now())
+  1111→  updatedAt       DateTime @updatedAt
+  1112→
+  1113→  @@index([officeId, lido, resolvido])
+  1114→  @@index([tipo])
+  1115→  @@index([dataVencimento])
+  1116→  @@index([severidade]) // FIX
+  1117→  @@map("fiscal_alertas")
+  1118→}
+  1119→
+  1120→// =============================================
+  1121→// TOKEN SECURITY
+  1122→// =============================================
+  1123→
+  1124→model RefreshToken {
+  1125→  id          String    @id @default(cuid())
+  1126→  token       String    @unique
+  1127→  userId      String
+  1128→  officeId    String
+  1129→  role        String
+  1130→  expiresAt   DateTime
+  1131→  revokedAt   DateTime?
+  1132→  replacedBy  String?
+  1133→  reason      String?   // 'ROTATION', 'TOKEN_THEFT_DETECTED', 'LOGOUT', 'PASSWORD_CHANGE', 'ACCOUNT_DEACTIVATED'
+  1134→  createdAt   DateTime  @default(now())
+  1135→  isRevoked   Boolean   @default(false)
+  1136→
+  1137→  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  1138→  office      Office    @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  1139→
+  1140→  @@index([userId])
+  1141→  @@index([token])
+  1142→  @@index([expiresAt])
+  1143→}
+  1144→
+  1145→model TokenBlacklist {
+  1146→  id          String    @id @default(cuid())
+  1147→  jti         String    @unique
+  1148→  userId      String
+  1149→  officeId    String
+  1150→  reason      String?   // 'LOGOUT', 'PASSWORD_CHANGE', 'ACCOUNT_DEACTIVATED', 'SECURITY'
+  1151→  expiresAt   DateTime  // When the original JWT expires (auto-cleanup)
+  1152→  createdAt   DateTime  @default(now())
+  1153→
+  1154→  @@index([jti])
+  1155→  @@index([expiresAt])
+  1156→}
+  1157→

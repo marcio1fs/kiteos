@@ -1,0 +1,21 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="markdown">
+<rect id="Rectangle 3498" x="19.5996" y="10" width="8.4" height="18" rx="3" fill="url(#paint0_linear_462_390)"/>
+<path id="Union" d="M20 4C21.6569 4 23 5.34315 23 7V24H25.5V28H7C5.34315 28 4 26.6569 4 25V7C4 5.34315 5.34315 4 7 4H20Z" fill="url(#paint1_linear_462_390)"/>
+<path id="Rectangle 3499" d="M23 24C23 22.6193 24.1193 21.5 25.5 21.5C26.8807 21.5 28 22.6193 28 24V25.5C28 26.8807 26.8807 28 25.5 28C24.1193 28 23 26.8807 23 25.5V24Z" fill="#374151"/>
+<g id="MD_Icon">
+<path id="Vector" d="M8 12H10L12 15L14 12H16V20H14V15L12 18L10 15V20H8V12Z" fill="white"/>
+<path id="Vector_2" d="M17 16V12H19V16H21L18 19L15 16H17Z" fill="white"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_462_390" x1="27.4995" y1="11" x2="25.4995" y2="22.5" gradientUnits="userSpaceOnUse">
+<stop stop-color="#4B5563"/>
+<stop offset="1" stop-color="#374151"/>
+</linearGradient>
+<linearGradient id="paint1_linear_462_390" x1="6" y1="5.5" x2="21.9701" y2="29.6897" gradientUnits="userSpaceOnUse">
+<stop stop-color="#6B7280"/>
+<stop offset="1" stop-color="#9CA3AF"/>
+</linearGradient>
+</defs>
+</svg>

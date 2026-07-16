@@ -1,0 +1,306 @@
+     1→src/app/api/admin/subscriptions/route.ts(106,57): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+     2→src/app/api/admin/subscriptions/route.ts(112,56): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+     3→src/app/api/admin/subscriptions/route.ts(116,72): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+     4→src/app/api/admin/subscriptions/route.ts(121,46): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+     5→src/app/api/auth/register/route.ts(72,7): error TS2322: Type '{ email: any; }' is not assignable to type 'UserWhereUniqueInput'.
+     6→  Type '{ email: any; }' is not assignable to type '{ id: string; email_officeId: UserEmailOfficeIdCompoundUniqueInput; } & { id?: string | undefined; email_officeId?: UserEmailOfficeIdCompoundUniqueInput | undefined; ... 14 more ...; refreshTokens?: RefreshTokenListRelationFilter | undefined; }'.
+     7→    Type '{ email: any; }' is missing the following properties from type '{ id: string; email_officeId: UserEmailOfficeIdCompoundUniqueInput; }': id, email_officeId
+     8→src/app/api/client-invoices/route.ts(224,13): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+     9→src/app/api/client-invoices/route.ts(225,13): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    10→src/app/api/client-invoices/route.ts(226,13): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    11→src/app/api/client-invoices/route.ts(227,13): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    12→src/app/api/client-invoices/route.ts(233,27): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    13→src/app/api/client-invoices/route.ts(234,26): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    14→src/app/api/client-invoices/route.ts(235,26): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    15→src/app/api/client-invoices/route.ts(236,29): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    16→src/app/api/client-invoices/route.ts(238,9): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    17→src/app/api/client-invoices/route.ts(247,11): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    18→src/app/api/client-invoices/route.ts(249,11): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    19→src/app/api/client-invoices/route.ts(250,11): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    20→src/app/api/client-invoices/route.ts(255,11): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    21→src/app/api/client-invoices/route.ts(279,49): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+    22→src/app/api/client-invoices/route.ts(291,20): error TS2322: Type '{ tipo: string; descricao: string; quantidade: number; unidade: string; valorUnitario: number; valorTotal: number; ncm: string | null; cfop: string | null; cst: string | null; csosn: string | null; ... 5 more ...; partId: string | null; }[]' is not assignable to type '(Without<ClientInvoiceItemCreateWithoutClientInvoiceInput, ClientInvoiceItemUncheckedCreateWithoutClientInvoiceInput> & ClientInvoiceItemUncheckedCreateWithoutClientInvoiceInput) | (Without<...> & ClientInvoiceItemCreateWithoutClientInvoiceInput) | ClientInvoiceItemCreateWithoutClientInvoiceInput[] | ClientInvoiceIt...'.
+    23→  Type '{ tipo: string; descricao: string; quantidade: number; unidade: string; valorUnitario: number; valorTotal: number; ncm: string | null; cfop: string | null; cst: string | null; csosn: string | null; ... 5 more ...; partId: string | null; }[]' is not assignable to type 'ClientInvoiceItemCreateWithoutClientInvoiceInput[]'.
+    24→    Property 'officeId' is missing in type '{ tipo: string; descricao: string; quantidade: number; unidade: string; valorUnitario: number; valorTotal: number; ncm: string | null; cfop: string | null; cst: string | null; csosn: string | null; ... 5 more ...; partId: string | null; }' but required in type 'ClientInvoiceItemCreateWithoutClientInvoiceInput'.
+    25→src/app/api/client-invoices/route.ts(374,13): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    26→src/app/api/client-invoices/route.ts(375,13): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    27→src/app/api/client-invoices/route.ts(376,13): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    28→src/app/api/client-invoices/route.ts(377,13): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    29→src/app/api/client-invoices/route.ts(383,27): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    30→src/app/api/client-invoices/route.ts(384,26): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    31→src/app/api/client-invoices/route.ts(385,26): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    32→src/app/api/client-invoices/route.ts(386,29): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    33→src/app/api/client-invoices/route.ts(388,9): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    34→src/app/api/client-invoices/route.ts(397,11): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    35→src/app/api/client-invoices/route.ts(399,11): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    36→src/app/api/client-invoices/route.ts(400,11): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    37→src/app/api/client-invoices/route.ts(405,11): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    38→src/app/api/client-invoices/route.ts(433,21): error TS2365: Operator '+' cannot be applied to types 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+    39→src/app/api/client-invoices/route.ts(445,20): error TS2322: Type '{ tipo: string; descricao: string; quantidade: number; unidade: string; valorUnitario: number; valorTotal: number; ncm: string | null; cfop: string | null; cst: string | null; csosn: string | null; ... 5 more ...; partId: string | null; }[]' is not assignable to type '(Without<ClientInvoiceItemCreateWithoutClientInvoiceInput, ClientInvoiceItemUncheckedCreateWithoutClientInvoiceInput> & ClientInvoiceItemUncheckedCreateWithoutClientInvoiceInput) | (Without<...> & ClientInvoiceItemCreateWithoutClientInvoiceInput) | ClientInvoiceItemCreateWithoutClientInvoiceInput[] | ClientInvoiceIt...'.
+    40→  Type '{ tipo: string; descricao: string; quantidade: number; unidade: string; valorUnitario: number; valorTotal: number; ncm: string | null; cfop: string | null; cst: string | null; csosn: string | null; ... 5 more ...; partId: string | null; }[]' is not assignable to type 'ClientInvoiceItemCreateWithoutClientInvoiceInput[]'.
+    41→    Property 'officeId' is missing in type '{ tipo: string; descricao: string; quantidade: number; unidade: string; valorUnitario: number; valorTotal: number; ncm: string | null; cfop: string | null; cst: string | null; csosn: string | null; ... 5 more ...; partId: string | null; }' but required in type 'ClientInvoiceItemCreateWithoutClientInvoiceInput'.
+    42→src/app/api/estoque/movimentar/route.ts(106,11): error TS2322: Type '{ officeId: string; id: string; deleted: boolean; createdAt: Date; updatedAt: Date; version: number; description: string; sku: string; ncm: string | null; cfop: string | null; unit: string; ... 9 more ...; supplierId: string | null; } | null' is not assignable to type 'null'.
+    43→  Type '{ officeId: string; id: string; deleted: boolean; createdAt: Date; updatedAt: Date; version: number; description: string; sku: string; ncm: string | null; cfop: string | null; unit: string; ... 9 more ...; supplierId: string | null; }' is not assignable to type 'null'.
+    44→src/app/api/estoque/movimentar/route.ts(114,11): error TS2322: Type '{ officeId: string; id: string; deleted: boolean; createdAt: Date; updatedAt: Date; version: number; description: string; sku: string; ncm: string | null; cfop: string | null; unit: string; ... 9 more ...; supplierId: string | null; } | null' is not assignable to type 'null'.
+    45→  Type '{ officeId: string; id: string; deleted: boolean; createdAt: Date; updatedAt: Date; version: number; description: string; sku: string; ncm: string | null; cfop: string | null; unit: string; ... 9 more ...; supplierId: string | null; }' is not assignable to type 'null'.
+    46→src/app/api/estoque/movimentar/route.ts(122,11): error TS2322: Type '{ officeId: string; id: string; deleted: boolean; createdAt: Date; updatedAt: Date; version: number; description: string; sku: string; ncm: string | null; cfop: string | null; unit: string; ... 9 more ...; supplierId: string | null; }' is not assignable to type 'null'.
+    47→src/app/api/estoque/movimentar/route.ts(131,26): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    48→src/app/api/estoque/movimentar/route.ts(141,21): error TS18047: 'part' is possibly 'null'.
+    49→src/app/api/estoque/movimentar/route.ts(142,18): error TS18047: 'part' is possibly 'null'.
+    50→src/app/api/estoque/movimentar/route.ts(154,31): error TS2339: Property 'id' does not exist on type 'never'.
+    51→src/app/api/estoque/movimentar/route.ts(163,31): error TS2339: Property 'id' does not exist on type 'never'.
+    52→src/app/api/estoque/movimentar/route.ts(175,67): error TS2339: Property 'id' does not exist on type 'never'.
+    53→src/app/api/estoque/movimentar/route.ts(180,26): error TS2339: Property 'id' does not exist on type 'never'.
+    54→src/app/api/estoque/movimentar/route.ts(181,23): error TS2339: Property 'sku' does not exist on type 'never'.
+    55→src/app/api/estoque/movimentar/route.ts(197,21): error TS18047: 'part' is possibly 'null'.
+    56→src/app/api/estoque/movimentar/route.ts(205,27): error TS18047: 'part' is possibly 'null'.
+    57→src/app/api/financial/dashboard/route.ts(149,9): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    58→src/app/api/financial/dashboard/route.ts(151,9): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    59→src/app/api/financial/dashboard/route.ts(192,19): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    60→src/app/api/financial/dashboard/route.ts(192,62): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    61→src/app/api/financial/pay/[id]/route.ts(115,19): error TS18047: 'existing' is possibly 'null'.
+    62→src/app/api/financial/pay/[id]/route.ts(116,43): error TS18047: 'existing' is possibly 'null'.
+    63→src/app/api/financial/pay/[id]/route.ts(117,17): error TS18047: 'existing' is possibly 'null'.
+    64→src/app/api/financial/pay/[id]/route.ts(119,17): error TS18047: 'auth.payload' is possibly 'null'.
+    65→src/app/api/financial/pay/[id]/route.ts(120,19): error TS18047: 'existing' is possibly 'null'.
+    66→src/app/api/financial/reports/route.ts(126,7): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    67→src/app/api/financial/reports/route.ts(127,7): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    68→src/app/api/financial/reports/route.ts(128,7): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    69→src/app/api/financial/reports/route.ts(129,7): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    70→src/app/api/financial/reports/route.ts(133,7): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    71→src/app/api/financial/reports/route.ts(134,7): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    72→src/app/api/financial/reports/route.ts(135,7): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    73→src/app/api/financial/reports/route.ts(136,7): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    74→src/app/api/financial/reports/route.ts(141,9): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    75→src/app/api/financial/reports/route.ts(142,9): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    76→src/app/api/financial/reports/route.ts(145,9): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    77→src/app/api/financial/reports/route.ts(146,9): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+    78→src/app/api/financial/reports/route.ts(192,17): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+    79→src/app/api/financial/reports/route.ts(193,19): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+    80→src/app/api/financial/reports/route.ts(194,19): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+    81→src/app/api/financial/reports/route.ts(195,22): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+    82→src/app/api/mechanics/commission/route.ts(81,61): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+    83→src/app/api/mechanics/commission/route.ts(82,66): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+    84→src/app/api/mechanics/commission/route.ts(89,11): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    85→src/app/api/mercadopago/create-payment/route.ts(108,13): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+    86→src/app/api/mercadopago/payment-status/route.ts(81,34): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    87→src/app/api/mercadopago/payment-status/route.ts(81,53): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    88→src/app/api/mercadopago/webhook/route.ts(197,61): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    89→src/app/api/mercadopago/webhook/route.ts(226,32): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    90→src/app/api/mercadopago/webhook/route.ts(226,51): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    91→src/app/api/nfe/[id]/validate/route.ts(41,60): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+    92→src/app/api/nfe/[id]/validate/route.ts(44,31): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    93→src/app/api/nfe/[id]/validate/route.ts(52,29): error TS2365: Operator '+' cannot be applied to types 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+    94→src/app/api/nfe/[id]/validate/route.ts(52,29): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+    95→src/app/api/nfe/[id]/validate/route.ts(52,81): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    96→src/app/api/nfe/[id]/validate/route.ts(53,36): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    97→src/app/api/nfe/[id]/validate/route.ts(108,28): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    98→src/app/api/nfe/[id]/validate/route.ts(108,45): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+    99→src/app/api/nfe/[id]/validate/route.ts(109,27): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   100→src/app/api/nfe/[id]/validate/route.ts(109,46): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   101→src/app/api/nfe/[id]/validate/route.ts(110,27): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   102→src/app/api/nfe/[id]/validate/route.ts(110,46): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   103→src/app/api/nfe/[id]/validate/route.ts(111,30): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   104→src/app/api/nfe/[id]/validate/route.ts(111,49): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   105→src/app/api/nfe/[id]/validate/route.ts(120,35): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   106→src/app/api/nfe/[id]/validate/route.ts(125,34): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   107→src/app/api/nfe/[id]/validate/route.ts(130,34): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   108→src/app/api/nfe/[id]/validate/route.ts(135,37): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   109→src/app/api/nfe/[id]/validate/route.ts(148,11): error TS2365: Operator '<=' cannot be applied to types 'Decimal' and 'number'.
+   110→src/app/api/nfe/[id]/validate/route.ts(155,33): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   111→src/app/api/nfe/[id]/validate/route.ts(155,51): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   112→src/app/api/nfe/[id]/validate/route.ts(156,40): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   113→src/app/api/nfe/[id]/validate/route.ts(164,64): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+   114→src/app/api/nfe/[id]/validate/route.ts(165,35): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   115→src/app/api/nfe/[id]/validate/route.ts(172,63): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+   116→src/app/api/nfe/[id]/validate/route.ts(173,34): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   117→src/app/api/nfse/from-os/route.ts(80,9): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+   118→src/app/api/nfse/from-os/route.ts(113,41): error TS2345: Argument of type '{ numero: string; competencia: string; itemListaServico: any; discriminacao: string; valorServicos: Decimal; valorDeducoes: Decimal; aliqIssqn: number; tipoTributacao: "ISSQN"; ... 5 more ...; serviceOrderId: string; }' is not assignable to parameter of type 'Partial<NfseServicoData>'.
+   119→  Types of property 'valorServicos' are incompatible.
+   120→    Type 'Decimal' is not assignable to type 'number'.
+   121→src/app/api/nfse/from-os/route.ts(122,37): error TS2345: Argument of type '{ numero: string; competencia: string; itemListaServico: any; discriminacao: string; valorServicos: Decimal; valorDeducoes: Decimal; aliqIssqn: number; tipoTributacao: "ISSQN"; ... 5 more ...; serviceOrderId: string; }' is not assignable to parameter of type 'NfseServicoData'.
+   122→  Types of property 'valorServicos' are incompatible.
+   123→    Type 'Decimal' is not assignable to type 'number'.
+   124→src/app/api/nfse/from-os/route.ts(157,40): error TS2345: Argument of type '{ numero: string; officeData: { cnpj: string; name: string; email: string; phone: string | null; address: string | null; city: string | null; state: string | null; zipCode: string | null; }; ... 20 more ...; serviceOrderId: string; }' is not assignable to parameter of type 'NfseServicoData & IssqnCalculation & { officeData: OfficeData; }'.
+   125→  Type '{ numero: string; officeData: { cnpj: string; name: string; email: string; phone: string | null; address: string | null; city: string | null; state: string | null; zipCode: string | null; }; ... 20 more ...; serviceOrderId: string; }' is not assignable to type 'NfseServicoData'.
+   126→    Types of property 'valorServicos' are incompatible.
+   127→      Type 'Decimal' is not assignable to type 'number'.
+   128→src/app/api/pdv/route.ts(139,11): error TS2322: Type '{ description: string; quantity: number; unitPrice: number; totalPrice: number; partId: string | null; }[]' is not assignable to type '(Without<SaleItemCreateWithoutSaleInput, SaleItemUncheckedCreateWithoutSaleInput> & SaleItemUncheckedCreateWithoutSaleInput) | (Without<...> & SaleItemCreateWithoutSaleInput) | SaleItemCreateWithoutSaleInput[] | SaleItemUncheckedCreateWithoutSaleInput[] | undefined'.
+   129→  Type '{ description: string; quantity: number; unitPrice: number; totalPrice: number; partId: string | null; }[]' is not assignable to type 'SaleItemCreateWithoutSaleInput[]'.
+   130→    Property 'officeId' is missing in type '{ description: string; quantity: number; unitPrice: number; totalPrice: number; partId: string | null; }' but required in type 'SaleItemCreateWithoutSaleInput'.
+   131→src/app/api/recebimento/[nfeId]/conferir/route.ts(94,46): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   132→src/app/api/recebimento/[nfeId]/conferir/route.ts(95,34): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+   133→src/app/api/recebimento/[nfeId]/conferir/route.ts(95,77): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   134→src/app/api/recebimento/[nfeId]/conferir/route.ts(114,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   135→src/app/api/sales/[id]/route.ts(99,56): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+   136→src/app/api/sales/[id]/route.ts(160,35): error TS2365: Operator '+' cannot be applied to types 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   137→src/app/api/sales/[id]/route.ts(195,52): error TS2365: Operator '+' cannot be applied to types 'number' and 'Decimal'.
+   138→src/app/api/sefaz/[nfeId]/aprovar/route.ts(132,12): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   139→src/app/api/sefaz/[nfeId]/aprovar/route.ts(136,11): error TS2365: Operator '<=' cannot be applied to types 'number | Decimal' and 'number'.
+   140→src/app/api/sefaz/[nfeId]/aprovar/route.ts(200,9): error TS2322: Type 'number | Decimal' is not assignable to type 'number'.
+   141→  Type 'Decimal' is not assignable to type 'number'.
+   142→src/app/api/sefaz/[nfeId]/aprovar/route.ts(201,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   143→src/app/api/sefaz/[nfeId]/aprovar/route.ts(249,11): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   144→src/app/api/sefaz/[nfeId]/aprovar/route.ts(279,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   145→src/app/api/service-orders/[id]/route.ts(130,43): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   146→src/app/api/service-orders/[id]/route.ts(236,35): error TS2365: Operator '+' cannot be applied to types 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   147→src/app/api/service-orders/[id]/route.ts(252,45): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   148→src/app/api/service-orders/[id]/route.ts(261,23): error TS2365: Operator '<' cannot be applied to types 'Decimal' and 'number'.
+   149→src/app/api/service-orders/[id]/route.ts(277,39): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   150→src/app/api/service-orders/[id]/route.ts(295,39): error TS2365: Operator '+' cannot be applied to types 'Decimal' and 'number'.
+   151→src/app/api/service-orders/[id]/route.ts(321,13): error TS2322: Type '{ serviceOrderId: string; type: string; description: string; quantity: number; unitPrice: number; totalPrice: number; partId: string | null; mechanicId: string | null; commissionPct: number; commissionValue: number; }[]' is not assignable to type 'ServiceOrderItemCreateManyInput | ServiceOrderItemCreateManyInput[]'.
+   152→  Type '{ serviceOrderId: string; type: string; description: string; quantity: number; unitPrice: number; totalPrice: number; partId: string | null; mechanicId: string | null; commissionPct: number; commissionValue: number; }[]' is not assignable to type 'ServiceOrderItemCreateManyInput[]'.
+   153→    Property 'officeId' is missing in type '{ serviceOrderId: string; type: string; description: string; quantity: number; unitPrice: number; totalPrice: number; partId: string | null; mechanicId: string | null; commissionPct: number; commissionValue: number; }' but required in type 'ServiceOrderItemCreateManyInput'.
+   154→src/app/api/service-orders/[id]/route.ts(357,35): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   155→src/app/api/service-orders/[id]/route.ts(390,32): error TS2365: Operator '+' cannot be applied to types 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   156→src/app/api/service-orders/[id]/route.ts(483,31): error TS2365: Operator '+' cannot be applied to types 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   157→src/app/api/service-orders/[id]/status/route.ts(142,33): error TS2365: Operator '+' cannot be applied to types 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   158→src/app/api/service-orders/route.ts(256,23): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   159→src/app/api/subscriptions/check/route.ts(152,7): error TS2322: Type 'number' is not assignable to type 'Decimal'.
+   160→src/app/api/tax-rules/route.ts(127,7): error TS2322: Type '{ ncm: any; cfop: any; cst: any; csosn: any; aliqIcms: number; aliqIpi: number; aliqPis: number; aliqCofins: number; state: any; active: true; }' is not assignable to type '(Without<TaxRuleCreateInput, TaxRuleUncheckedCreateInput> & TaxRuleUncheckedCreateInput) | (Without<...> & TaxRuleCreateInput)'.
+   161→  Type '{ ncm: any; cfop: any; cst: any; csosn: any; aliqIcms: number; aliqIpi: number; aliqPis: number; aliqCofins: number; state: any; active: true; }' is not assignable to type 'Without<TaxRuleUncheckedCreateInput, TaxRuleCreateInput> & TaxRuleCreateInput'.
+   162→    Property 'office' is missing in type '{ ncm: any; cfop: any; cst: any; csosn: any; aliqIcms: number; aliqIpi: number; aliqPis: number; aliqCofins: number; state: any; active: true; }' but required in type 'TaxRuleCreateInput'.
+   163→src/app/api/whatsapp/send-nf/route.ts(374,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   164→src/app/api/whatsapp/send-nf/route.ts(375,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   165→src/app/api/whatsapp/send-nf/route.ts(376,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   166→src/app/api/whatsapp/send-nf/route.ts(377,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   167→src/app/api/whatsapp/send-nf/route.ts(378,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   168→src/app/api/whatsapp/send-nf/route.ts(380,9): error TS2322: Type '{ descricao: string; quantidade: Decimal; valorUnitario: Decimal; valorTotal: Decimal; tipo: string; }[]' is not assignable to type '{ tipo: string; descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; }[]'.
+   169→  Type '{ descricao: string; quantidade: Decimal; valorUnitario: Decimal; valorTotal: Decimal; tipo: string; }' is not assignable to type '{ tipo: string; descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; }'.
+   170→    Types of property 'quantidade' are incompatible.
+   171→      Type 'Decimal' is not assignable to type 'number'.
+   172→src/app/api/whatsapp/send-os/route.ts(429,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   173→src/app/api/whatsapp/send-os/route.ts(430,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   174→src/app/api/whatsapp/send-os/route.ts(431,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   175→src/app/api/whatsapp/send-os/route.ts(432,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   176→src/app/api/whatsapp/send-os/route.ts(438,9): error TS2322: Type '{ description: string; quantity: Decimal; type: string; unitPrice: Decimal; totalPrice: Decimal; }[]' is not assignable to type '{ type: string; description: string; quantity: number; unitPrice: number; totalPrice: number; }[]'.
+   177→  Type '{ description: string; quantity: Decimal; type: string; unitPrice: Decimal; totalPrice: Decimal; }' is not assignable to type '{ type: string; description: string; quantity: number; unitPrice: number; totalPrice: number; }'.
+   178→    Types of property 'quantity' are incompatible.
+   179→      Type 'Decimal' is not assignable to type 'number'.
+   180→src/app/api/whatsapp/send-sale/route.ts(294,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   181→src/app/api/whatsapp/send-sale/route.ts(295,9): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   182→src/app/api/whatsapp/send-sale/route.ts(300,9): error TS2322: Type '{ description: string; quantity: Decimal; unitPrice: Decimal; totalPrice: Decimal; }[]' is not assignable to type '{ description: string; quantity: number; unitPrice: number; totalPrice: number; }[]'.
+   183→  Type '{ description: string; quantity: Decimal; unitPrice: Decimal; totalPrice: Decimal; }' is not assignable to type '{ description: string; quantity: number; unitPrice: number; totalPrice: number; }'.
+   184→    Types of property 'quantity' are incompatible.
+   185→      Type 'Decimal' is not assignable to type 'number'.
+   186→src/lib/fiscal/dashboard-service.ts(180,21): error TS2365: Operator '+' cannot be applied to types 'number | import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'number | import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   187→src/lib/fiscal/dashboard-service.ts(181,20): error TS2365: Operator '+' cannot be applied to types 'number | import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'number | import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   188→src/lib/fiscal/dashboard-service.ts(182,20): error TS2365: Operator '+' cannot be applied to types 'number | import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'number | import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   189→src/lib/fiscal/dashboard-service.ts(183,23): error TS2365: Operator '+' cannot be applied to types 'number | import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'number | import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   190→src/lib/fiscal/dashboard-service.ts(224,30): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   191→src/lib/fiscal/dashboard-service.ts(269,7): error TS2365: Operator '+' cannot be applied to types 'number | import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'number | import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   192→src/lib/logger.ts(70,5): error TS2698: Spread types may only be created from object types.
+   193→src/lib/numbering.ts(77,36): error TS2322: Type '{ number: string; }' is not assignable to type 'SaleWhereUniqueInput'.
+   194→  Type '{ number: string; }' is not assignable to type '{ id: string; number_officeId: SaleNumberOfficeIdCompoundUniqueInput; } & { id?: string | undefined; number_officeId?: SaleNumberOfficeIdCompoundUniqueInput | undefined; ... 19 more ...; clientInvoices?: ClientInvoiceListRelationFilter | undefined; }'.
+   195→    Type '{ number: string; }' is missing the following properties from type '{ id: string; number_officeId: SaleNumberOfficeIdCompoundUniqueInput; }': id, number_officeId
+   196→src/lib/numbering.ts(79,44): error TS2322: Type '{ number: string; }' is not assignable to type 'ServiceOrderWhereUniqueInput'.
+   197→  Type '{ number: string; }' is not assignable to type '{ id: string; number_officeId: ServiceOrderNumberOfficeIdCompoundUniqueInput; } & { id?: string | undefined; number_officeId?: ServiceOrderNumberOfficeIdCompoundUniqueInput | undefined; ... 25 more ...; clientInvoices?: ClientInvoiceListRelationFilter | undefined; }'.
+   198→    Type '{ number: string; }' is missing the following properties from type '{ id: string; number_officeId: ServiceOrderNumberOfficeIdCompoundUniqueInput; }': id, number_officeId
+   199→src/lib/numbering.ts(80,45): error TS2322: Type '{ number: string; }' is not assignable to type 'ClientInvoiceWhereUniqueInput'.
+   200→  Type '{ number: string; }' is not assignable to type '{ id: string; number_officeId: ClientInvoiceNumberOfficeIdCompoundUniqueInput; } & { id?: string | undefined; number_officeId?: ClientInvoiceNumberOfficeIdCompoundUniqueInput | undefined; ... 58 more ...; items?: ClientInvoiceItemListRelationFilter | undefined; }'.
+   201→    Type '{ number: string; }' is missing the following properties from type '{ id: string; number_officeId: ClientInvoiceNumberOfficeIdCompoundUniqueInput; }': id, number_officeId
+   202→src/lib/sped/sped-generator.ts(382,22): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   203→src/lib/sped/sped-generator.ts(383,22): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   204→src/lib/sped/sped-generator.ts(483,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   205→src/lib/sped/sped-generator.ts(485,35): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   206→src/lib/sped/sped-generator.ts(487,35): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   207→src/lib/sped/sped-generator.ts(489,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   208→src/lib/sped/sped-generator.ts(490,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   209→src/lib/sped/sped-generator.ts(492,37): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   210→src/lib/sped/sped-generator.ts(493,35): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   211→src/lib/sped/sped-generator.ts(496,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   212→src/lib/sped/sped-generator.ts(497,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   213→src/lib/sped/sped-generator.ts(498,37): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   214→src/lib/sped/sped-generator.ts(521,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   215→src/lib/sped/sped-generator.ts(523,37): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   216→src/lib/sped/sped-generator.ts(529,39): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   217→src/lib/sped/sped-generator.ts(530,26): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+   218→src/lib/sped/sped-generator.ts(530,47): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+   219→src/lib/sped/sped-generator.ts(530,82): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   220→src/lib/sped/sped-generator.ts(530,99): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   221→src/lib/sped/sped-generator.ts(531,37): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   222→src/lib/sped/sped-generator.ts(539,25): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+   223→src/lib/sped/sped-generator.ts(539,46): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+   224→src/lib/sped/sped-generator.ts(539,82): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   225→src/lib/sped/sped-generator.ts(539,98): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   226→src/lib/sped/sped-generator.ts(540,36): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   227→src/lib/sped/sped-generator.ts(545,36): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   228→src/lib/sped/sped-generator.ts(550,39): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   229→src/lib/sped/sped-generator.ts(572,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   230→src/lib/sped/sped-generator.ts(573,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   231→src/lib/sped/sped-generator.ts(574,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   232→src/lib/sped/sped-generator.ts(575,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   233→src/lib/sped/sped-generator.ts(576,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   234→src/lib/sped/sped-generator.ts(577,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   235→src/lib/sped/sped-generator.ts(582,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   236→src/lib/sped/sped-generator.ts(583,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   237→src/lib/sped/sped-generator.ts(584,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   238→src/lib/sped/sped-generator.ts(585,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   239→src/lib/sped/sped-generator.ts(586,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   240→src/lib/sped/sped-generator.ts(587,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   241→src/lib/sped/sped-generator.ts(607,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   242→src/lib/sped/sped-generator.ts(609,35): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   243→src/lib/sped/sped-generator.ts(611,35): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   244→src/lib/sped/sped-generator.ts(616,37): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   245→src/lib/sped/sped-generator.ts(617,35): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   246→src/lib/sped/sped-generator.ts(620,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   247→src/lib/sped/sped-generator.ts(621,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   248→src/lib/sped/sped-generator.ts(622,37): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   249→src/lib/sped/sped-generator.ts(645,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   250→src/lib/sped/sped-generator.ts(647,37): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   251→src/lib/sped/sped-generator.ts(653,39): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   252→src/lib/sped/sped-generator.ts(654,26): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+   253→src/lib/sped/sped-generator.ts(654,47): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+   254→src/lib/sped/sped-generator.ts(654,82): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   255→src/lib/sped/sped-generator.ts(654,99): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   256→src/lib/sped/sped-generator.ts(655,37): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   257→src/lib/sped/sped-generator.ts(663,25): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+   258→src/lib/sped/sped-generator.ts(663,46): error TS2365: Operator '>' cannot be applied to types 'Decimal' and 'number'.
+   259→src/lib/sped/sped-generator.ts(663,82): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   260→src/lib/sped/sped-generator.ts(663,98): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   261→src/lib/sped/sped-generator.ts(664,36): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   262→src/lib/sped/sped-generator.ts(669,36): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   263→src/lib/sped/sped-generator.ts(674,39): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   264→src/lib/sped/sped-generator.ts(696,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   265→src/lib/sped/sped-generator.ts(697,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   266→src/lib/sped/sped-generator.ts(698,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   267→src/lib/sped/sped-generator.ts(699,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   268→src/lib/sped/sped-generator.ts(700,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   269→src/lib/sped/sped-generator.ts(701,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   270→src/lib/sped/sped-generator.ts(706,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   271→src/lib/sped/sped-generator.ts(707,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   272→src/lib/sped/sped-generator.ts(708,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   273→src/lib/sped/sped-generator.ts(709,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   274→src/lib/sped/sped-generator.ts(710,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   275→src/lib/sped/sped-generator.ts(711,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   276→src/lib/sped/sped-generator.ts(822,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   277→src/lib/sped/sped-generator.ts(824,35): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   278→src/lib/sped/sped-generator.ts(825,37): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   279→src/lib/sped/sped-generator.ts(826,35): error TS2365: Operator '+' cannot be applied to types 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal' and 'import("/home/z/my-project/node_modules/@prisma/client/runtime/library").Decimal'.
+   280→src/lib/sped/sped-generator.ts(827,38): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   281→src/lib/sped/sped-generator.ts(828,36): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   282→src/lib/sped/sped-generator.ts(830,33): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   283→src/lib/sped/sped-generator.ts(832,35): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   284→src/lib/sped/sped-generator.ts(834,34): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   285→src/lib/sped/sped-generator.ts(836,37): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   286→src/lib/sped/sped-generator.ts(1037,24): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   287→src/lib/sped/sped-generator.ts(1037,37): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   288→src/lib/sped/sped-generator.ts(1051,20): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   289→src/lib/sped/sped-generator.ts(1051,33): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   290→src/lib/sped/sped-generator.ts(1060,22): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   291→src/lib/sped/sped-generator.ts(1061,22): error TS2345: Argument of type 'Decimal' is not assignable to parameter of type 'number'.
+   292→src/lib/sped/sped-generator.ts(1334,70): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   293→src/lib/sped/sped-generator.ts(1334,83): error TS2363: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+   294→src/lib/sped/sped-generator.ts(1357,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   295→src/lib/sped/sped-generator.ts(1358,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   296→src/lib/sped/sped-generator.ts(1359,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   297→src/lib/sped/sped-generator.ts(1363,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   298→src/lib/sped/sped-generator.ts(1364,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   299→src/lib/sped/sped-generator.ts(1365,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   300→src/lib/sped/sped-generator.ts(1393,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   301→src/lib/sped/sped-generator.ts(1394,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   302→src/lib/sped/sped-generator.ts(1395,13): error TS2365: Operator '+=' cannot be applied to types 'number' and 'Decimal'.
+   303→src/lib/sped/sped-generator.ts(1399,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   304→src/lib/sped/sped-generator.ts(1400,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   305→src/lib/sped/sped-generator.ts(1401,15): error TS2322: Type 'Decimal' is not assignable to type 'number'.
+   306→

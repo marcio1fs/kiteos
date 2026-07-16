@@ -1,0 +1,1691 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useCallback } from 'react'
+     4→import { useAuthStore, apiFetch } from '@/lib/store'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+     7→import { Input } from '@/components/ui/input'
+     8→import { Label } from '@/components/ui/label'
+     9→import { Textarea } from '@/components/ui/textarea'
+    10→import { Badge } from '@/components/ui/badge'
+    11→import {
+    12→  Dialog,
+    13→  DialogContent,
+    14→  DialogHeader,
+    15→  DialogTitle,
+    16→  DialogFooter,
+    17→} from '@/components/ui/dialog'
+    18→import {
+    19→  Select,
+    20→  SelectContent,
+    21→  SelectItem,
+    22→  SelectTrigger,
+    23→  SelectValue,
+    24→} from '@/components/ui/select'
+    25→import {
+    26→  Table,
+    27→  TableBody,
+    28→  TableCell,
+    29→  TableHead,
+    30→  TableHeader,
+    31→  TableRow,
+    32→} from '@/components/ui/table'
+    33→import { Separator } from '@/components/ui/separator'
+    34→import {
+    35→  Plus,
+    36→  Search,
+    37→  ChevronLeft,
+    38→  ChevronRight,
+    39→  Trash2,
+    40→  Loader2,
+    41→  FileText,
+    42→  Play,
+    43→  CheckCircle,
+    44→  CreditCard,
+    45→  XCircle,
+    46→  ArrowLeft,
+    47→  Wrench,
+    48→  Package,
+    49→  Printer,
+    50→  User,
+    51→  DollarSign,
+    52→  AlertTriangle,
+    53→  ArrowDownCircle,
+    54→  MessageCircle,
+    55→} from 'lucide-react'
+    56→import OSReceipt from '@/components/modules/os-receipt'
+    57→import { ClientInvoiceDoc, type ClientInvoiceData } from '@/components/modules/client-invoice-doc'
+    58→
+    59→// =============================================
+    60→// TYPES
+    61→// =============================================
+    62→type OSStatus = 'ABERTA' | 'EM_EXECUCAO' | 'FINALIZADA' | 'PAGA' | 'CANCELADA'
+    63→
+    64→interface ClientSimple {
+    65→  id: string
+    66→  name: string
+    67→  cpfCnpj?: string | null
+    68→  phone?: string | null
+    69→}
+    70→
+    71→interface VehicleSimple {
+    72→  id: string
+    73→  plate: string
+    74→  brand?: string | null
+    75→  model?: string | null
+    76→  year?: number | null
+    77→  color?: string | null
+    78→}
+    79→
+    80→interface PartSimple {
+    81→  id: string
+    82→  sku: string
+    83→  description: string
+    84→  salePrice: number
+    85→  quantity: number
+    86→}
+    87→
+    88→interface MechanicSimple {
+    89→  id: string
+    90→  name: string
+    91→  specialty?: string | null
+    92→  commissionPct: number
+    93→  active: boolean
+    94→}
+    95→
+    96→interface ServiceOrderItem {
+    97→  id?: string
+    98→  type: 'SERVICO' | 'PECA'
+    99→  description: string
+   100→  quantity: number
+   101→  unitPrice: number
+   102→  totalPrice: number
+   103→  partId?: string | null
+   104→  mechanicId?: string | null
+   105→  commissionPct?: number
+   106→  mechanic?: { id: string; name: string; commissionPct: number } | null
+   107→}
+   108→
+   109→interface ServiceOrder {
+   110→  id: string
+   111→  number: string
+   112→  status: OSStatus
+   113→  description?: string | null
+   114→  diagnosis?: string | null
+   115→  totalParts: number
+   116→  totalServices: number
+   117→  totalDiscount: number
+   118→  totalAmount: number
+   119→  paymentMethod?: string | null
+   120→  paidAt?: string | null
+   121→  clientId: string
+   122→  vehicleId: string
+   123→  client: { id: string; name: string; phone?: string | null; email?: string | null }
+   124→  vehicle: VehicleSimple
+   125→  items: ServiceOrderItem[]
+   126→  createdAt: string
+   127→  updatedAt: string
+   128→  totalCommission?: number
+   129→}
+   130→
+   131→// =============================================
+   132→// STATUS HELPERS
+   133→// =============================================
+   134→const STATUS_CONFIG: Record<OSStatus, { label: string; color: string; icon: typeof FileText }> = {
+   135→  ABERTA: { label: 'Aberta', color: 'bg-blue-100 text-blue-800 border-blue-200', icon: FileText },
+   136→  EM_EXECUCAO: { label: 'Em Execução', color: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: Play },
+   137→  FINALIZADA: { label: 'Finalizada', color: 'bg-green-100 text-green-800 border-green-200', icon: CheckCircle },
+   138→  PAGA: { label: 'Paga', color: 'bg-emerald-100 text-emerald-800 border-emerald-200', icon: CreditCard },
+   139→  CANCELADA: { label: 'Cancelada', color: 'bg-red-100 text-red-800 border-red-200', icon: XCircle },
+   140→}
+   141→
+   142→const STATUS_FLOW: OSStatus[] = ['ABERTA', 'EM_EXECUCAO', 'FINALIZADA', 'PAGA']
+   143→
+   144→function StatusBadge({ status }: { status: OSStatus }) {
+   145→  const config = STATUS_CONFIG[status]
+   146→  return (
+   147→    <Badge variant="outline" className={`${config.color} font-medium`}>
+   148→      {config.label}
+   149→    </Badge>
+   150→  )
+   151→}
+   152→
+   153→function formatCurrency(value: number) {
+   154→  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+   155→}
+   156→
+   157→function formatDate(dateStr: string) {
+   158→  return new Date(dateStr).toLocaleDateString('pt-BR', {
+   159→    day: '2-digit',
+   160→    month: '2-digit',
+   161→    year: 'numeric',
+   162→  })
+   163→}
+   164→
+   165→// =============================================
+   166→// STATUS TIMELINE
+   167→// =============================================
+   168→function StatusTimeline({ status }: { status: OSStatus }) {
+   169→  const currentIndex = STATUS_FLOW.indexOf(status)
+   170→  const isCancelled = status === 'CANCELADA'
+   171→
+   172→  return (
+   173→    <div className="flex items-center justify-between w-full">
+   174→      {STATUS_FLOW.map((step, index) => {
+   175→        const config = STATUS_CONFIG[step]
+   176→        const isCompleted = !isCancelled && index <= currentIndex
+   177→        const isCurrent = !isCancelled && index === currentIndex
+   178→        const Icon = config.icon
+   179→
+   180→        return (
+   181→          <div key={step} className="flex items-center flex-1 last:flex-none">
+   182→            <div className="flex flex-col items-center gap-1.5">
+   183→              <div
+   184→                className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
+   185→                  isCompleted
+   186→                    ? 'bg-emerald-600 border-emerald-600 text-white'
+   187→                    : isCancelled
+   188→                    ? 'bg-zinc-100 border-zinc-300 text-zinc-400'
+   189→                    : 'bg-white border-zinc-300 text-zinc-400'
+   190→                } ${isCurrent ? 'ring-4 ring-emerald-100' : ''}`}
+   191→              >
+   192→                <Icon className="w-4 h-4" />
+   193→              </div>
+   194→              <span
+   195→                className={`text-xs font-medium ${
+   196→                  isCompleted ? 'text-emerald-700' : isCancelled ? 'text-zinc-400' : 'text-zinc-400'
+   197→                }`}
+   198→              >
+   199→                {config.label}
+   200→              </span>
+   201→            </div>
+   202→            {index < STATUS_FLOW.length - 1 && (
+   203→              <div
+   204→                className={`flex-1 h-0.5 mx-2 rounded-full transition-all ${
+   205→                  !isCancelled && index < currentIndex ? 'bg-emerald-600' : 'bg-zinc-200'
+   206→                }`}
+   207→              />
+   208→            )}
+   209→          </div>
+   210→        )
+   211→      })}
+   212→    </div>
+   213→  )
+   214→}
+   215→
+   216→// =============================================
+   217→// NEW/EDIT OS DIALOG
+   218→// =============================================
+   219→function OSFormDialog({
+   220→  open,
+   221→  onClose,
+   222→  onSave,
+   223→  editingOS,
+   224→}: {
+   225→  open: boolean
+   226→  onClose: () => void
+   227→  onSave: (data: Record<string, unknown>) => Promise<void>
+   228→  editingOS: ServiceOrder | null
+   229→}) {
+   230→  const { user } = useAuthStore()
+   231→  const officeId = user?.officeId || ''
+   232→
+   233→  const [clients, setClients] = useState<ClientSimple[]>([])
+   234→  const [vehicles, setVehicles] = useState<VehicleSimple[]>([])
+   235→  const [parts, setParts] = useState<PartSimple[]>([])
+   236→  const [mechanics, setMechanics] = useState<MechanicSimple[]>([])
+   237→  const [loading, setLoading] = useState(false)
+   238→  const [clientsLoading, setClientsLoading] = useState(false)
+   239→  const [clientSearch, setClientSearch] = useState('')
+   240→
+   241→  const [selectedClientId, setSelectedClientId] = useState('')
+   242→  const [selectedVehicleId, setSelectedVehicleId] = useState('')
+   243→  const [description, setDescription] = useState('')
+   244→  const [diagnosis, setDiagnosis] = useState('')
+   245→  const [discount, setDiscount] = useState(0)
+   246→  const [discountType, setDiscountType] = useState<'VALUE' | 'PERCENT'>('VALUE')
+   247→  const [items, setItems] = useState<ServiceOrderItem[]>([
+   248→    { type: 'SERVICO', description: '', quantity: 1, unitPrice: 0, totalPrice: 0, partId: null, mechanicId: null, commissionPct: 0 },
+   249→  ])
+   250→
+   251→  // Fetch clients
+   252→  useEffect(() => {
+   253→    if (!open) return
+   254→    const fetchClients = async () => {
+   255→      setClientsLoading(true)
+   256→      try {
+   257→        const res = await apiFetch(`/api/clients?officeId=${officeId}&limit=100`)
+   258→        if (res.success) setClients(res.data)
+   259→      } catch (err) {
+   260→        console.error('Error fetching clients:', err)
+   261→      } finally {
+   262→        setClientsLoading(false)
+   263→      }
+   264→    }
+   265→    fetchClients()
+   266→  }, [open, officeId])
+   267→
+   268→  // Fetch parts
+   269→  useEffect(() => {
+   270→    if (!open) return
+   271→    const fetchParts = async () => {
+   272→      try {
+   273→        const res = await apiFetch(`/api/parts?officeId=${officeId}`)
+   274→        if (res.success) setParts(res.data)
+   275→      } catch (err) {
+   276→        console.error('Error fetching parts:', err)
+   277→      }
+   278→    }
+   279→    fetchParts()
+   280→  }, [open, officeId])
+   281→
+   282→  // Fetch mechanics (active only)
+   283→  useEffect(() => {
+   284→    if (!open) return
+   285→    const fetchMechanics = async () => {
+   286→      try {
+   287→        const res = await apiFetch(`/api/mechanics?officeId=${officeId}&active=true`)
+   288→        if (res.success) setMechanics(res.data)
+   289→      } catch (err) {
+   290→        console.error('Error fetching mechanics:', err)
+   291→      }
+   292→    }
+   293→    fetchMechanics()
+   294→  }, [open, officeId])
+   295→
+   296→  // Fetch vehicles when client changes
+   297→  useEffect(() => {
+   298→    if (!selectedClientId) {
+   299→      setVehicles([])
+   300→      return
+   301→    }
+   302→    const fetchVehicles = async () => {
+   303→      try {
+   304→        const res = await apiFetch(`/api/vehicles?officeId=${officeId}&clientId=${selectedClientId}`)
+   305→        if (res.success) setVehicles(res.data)
+   306→      } catch (err) {
+   307→        console.error('Error fetching vehicles:', err)
+   308→      }
+   309→    }
+   310→    fetchVehicles()
+   311→  }, [selectedClientId, officeId])
+   312→
+   313→  // Populate form when editing
+   314→  useEffect(() => {
+   315→    if (editingOS) {
+   316→      setSelectedClientId(editingOS.clientId)
+   317→      setSelectedVehicleId(editingOS.vehicleId)
+   318→      setDescription(editingOS.description || '')
+   319→      setDiagnosis(editingOS.diagnosis || '')
+   320→      setDiscount(editingOS.totalDiscount)
+   321→      setDiscountType('VALUE')
+   322→      setItems(
+   323→        editingOS.items.map((item) => ({
+   324→          id: item.id,
+   325→          type: item.type as 'SERVICO' | 'PECA',
+   326→          description: item.description,
+   327→          quantity: item.quantity,
+   328→          unitPrice: item.unitPrice,
+   329→          totalPrice: item.totalPrice,
+   330→          partId: item.partId || null,
+   331→          mechanicId: item.mechanicId || null,
+   332→          commissionPct: item.commissionPct || 0,
+   333→        }))
+   334→      )
+   335→    } else {
+   336→      setSelectedClientId('')
+   337→      setSelectedVehicleId('')
+   338→      setDescription('')
+   339→      setDiagnosis('')
+   340→      setDiscount(0)
+   341→      setDiscountType('VALUE')
+   342→      setItems([
+   343→        { type: 'SERVICO', description: '', quantity: 1, unitPrice: 0, totalPrice: 0, partId: null, mechanicId: null, commissionPct: 0 },
+   344→      ])
+   345→    }
+   346→  }, [editingOS, open])
+   347→
+   348→  const addItem = (type: 'SERVICO' | 'PECA' = 'SERVICO') => {
+   349→    if (type === 'PECA') {
+   350→      setItems([...items, { type: 'PECA', description: '', quantity: 1, unitPrice: 0, totalPrice: 0, partId: null, mechanicId: null, commissionPct: 0 }])
+   351→    } else {
+   352→      setItems([...items, { type: 'SERVICO', description: '', quantity: 1, unitPrice: 0, totalPrice: 0, partId: null, mechanicId: null, commissionPct: 0 }])
+   353→    }
+   354→  }
+   355→
+   356→  const removeItem = (index: number) => {
+   357→    if (items.length <= 1) return
+   358→    setItems(items.filter((_, i) => i !== index))
+   359→  }
+   360→
+   361→  const updateItem = (index: number, field: string, value: string | number | null) => {
+   362→    const updated = [...items]
+   363→    updated[index] = { ...updated[index], [field]: value }
+   364→
+   365→    if (field === 'quantity' || field === 'unitPrice') {
+   366→      const qty = field === 'quantity' ? Number(value) : updated[index].quantity
+   367→      const price = field === 'unitPrice' ? Number(value) : updated[index].unitPrice
+   368→      updated[index].totalPrice = qty * price
+   369→    }
+   370→
+   371→    // Auto-fill from part selection
+   372→    if (field === 'partId' && value) {
+   373→      const part = parts.find((p) => p.id === value)
+   374→      if (part) {
+   375→        updated[index].description = part.description
+   376→        updated[index].unitPrice = part.salePrice
+   377→        updated[index].totalPrice = updated[index].quantity * part.salePrice
+   378→      }
+   379→    }
+   380→
+   381→    // Auto-fill commission when mechanic is selected
+   382→    if (field === 'mechanicId') {
+   383→      if (value) {
+   384→        const mechanic = mechanics.find((m) => m.id === value)
+   385→        if (mechanic) {
+   386→          updated[index].commissionPct = mechanic.commissionPct
+   387→        }
+   388→      } else {
+   389→        updated[index].commissionPct = 0
+   390→      }
+   391→    }
+   392→
+   393→    setItems(updated)
+   394→  }
+   395→
+   396→  const totalParts = items.filter((i) => i.type === 'PECA').reduce((sum, i) => sum + i.totalPrice, 0)
+   397→  const totalServices = items.filter((i) => i.type === 'SERVICO').reduce((sum, i) => sum + i.totalPrice, 0)
+   398→  const subtotal = totalParts + totalServices
+   399→  const discountValue = discountType === 'PERCENT' ? (subtotal * discount) / 100 : discount
+   400→  const totalAmount = Math.max(0, subtotal - discountValue)
+   401→
+   402→  const filteredClients = clients.filter((c) =>
+   403→    !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.cpfCnpj && c.cpfCnpj.includes(clientSearch))
+   404→  )
+   405→
+   406→  const handleSave = async () => {
+   407→    if (!selectedClientId || !selectedVehicleId || items.length === 0) return
+   408→
+   409→    // Validate stock for PECA items
+   410→    const insufficientStock = items
+   411→      .filter((i) => i.type === 'PECA' && i.partId)
+   412→      .find((i) => {
+   413→        const part = parts.find((p) => p.id === i.partId)
+   414→        return part && part.quantity < i.quantity
+   415→      })
+   416→    if (insufficientStock) {
+   417→      const part = parts.find((p) => p.id === insufficientStock.partId)
+   418→      alert(`Estoque insuficiente para "${part?.description || 'peça'}". Disponível: ${part?.quantity || 0}, Solicitado: ${insufficientStock.quantity}`)
+   419→      return
+   420→    }
+   421→
+   422→    setLoading(true)
+   423→    try {
+   424→      const payload = {
+   425→        officeId,
+   426→        clientId: selectedClientId,
+   427→        vehicleId: selectedVehicleId,
+   428→        description: description || undefined,
+   429→        diagnosis: diagnosis || undefined,
+   430→        totalDiscount: discountValue,
+   431→        items: items.map((item) => ({
+   432→          id: item.id,
+   433→          type: item.type,
+   434→          description: item.description,
+   435→          quantity: item.quantity,
+   436→          unitPrice: item.unitPrice,
+   437→          partId: item.partId || undefined,
+   438→          mechanicId: item.type === 'SERVICO' ? (item.mechanicId || undefined) : undefined,
+   439→          commissionPct: item.type === 'SERVICO' && item.mechanicId ? (item.commissionPct || 0) : undefined,
+   440→        })),
+   441→      }
+   442→
+   443→      if (editingOS) {
+   444→        await apiFetch(`/api/service-orders/${editingOS.id}`, {
+   445→          method: 'PUT',
+   446→          body: JSON.stringify(payload),
+   447→        })
+   448→      } else {
+   449→        await apiFetch('/api/service-orders', {
+   450→          method: 'POST',
+   451→          body: JSON.stringify(payload),
+   452→        })
+   453→      }
+   454→      await onSave(payload)
+   455→      onClose()
+   456→    } catch (err) {
+   457→      console.error('Error saving OS:', err)
+   458→    } finally {
+   459→      setLoading(false)
+   460→    }
+   461→  }
+   462→
+   463→  return (
+   464→    <Dialog open={open} onOpenChange={onClose}>
+   465→      <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
+   466→        <DialogHeader>
+   467→          <DialogTitle className="text-lg font-semibold text-zinc-900">
+   468→            {editingOS ? `Editar OS ${editingOS.number}` : 'Nova Ordem de Serviço'}
+   469→          </DialogTitle>
+   470→        </DialogHeader>
+   471→
+   472→        <div className="space-y-6">
+   473→          {/* Client & Vehicle */}
+   474→          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   475→            <div className="space-y-2">
+   476→              <Label className="text-sm font-medium text-zinc-700">Cliente *</Label>
+   477→              <Input
+   478→                placeholder="Buscar cliente..."
+   479→                value={clientSearch}
+   480→                onChange={(e) => setClientSearch(e.target.value)}
+   481→                className="mb-1"
+   482→              />
+   483→              <Select value={selectedClientId} onValueChange={(v) => { setSelectedClientId(v); setSelectedVehicleId('') }}>
+   484→                <SelectTrigger className="w-full">
+   485→                  <SelectValue placeholder={clientsLoading ? 'Carregando...' : 'Selecione o cliente'} />
+   486→                </SelectTrigger>
+   487→                <SelectContent>
+   488→                  {filteredClients.map((c) => (
+   489→                    <SelectItem key={c.id} value={c.id}>
+   490→                      {c.name}{c.cpfCnpj ? ` - ${c.cpfCnpj}` : ''}
+   491→                    </SelectItem>
+   492→                  ))}
+   493→                </SelectContent>
+   494→              </Select>
+   495→            </div>
+   496→            <div className="space-y-2">
+   497→              <Label className="text-sm font-medium text-zinc-700">Veículo *</Label>
+   498→              <Select value={selectedVehicleId} onValueChange={setSelectedVehicleId} disabled={!selectedClientId}>
+   499→                <SelectTrigger className="w-full">
+   500→                  <SelectValue placeholder={selectedClientId ? 'Selecione o veículo' : 'Selecione o cliente primeiro'} />
+   501→                </SelectTrigger>
+   502→                <SelectContent>
+   503→                  {vehicles.map((v) => (
+   504→                    <SelectItem key={v.id} value={v.id}>
+   505→                      {v.plate} - {v.brand || ''} {v.model || ''} {v.year || ''}
+   506→                    </SelectItem>
+   507→                  ))}
+   508→                </SelectContent>
+   509→              </Select>
+   510→            </div>
+   511→          </div>
+   512→
+   513→          {/* Description & Diagnosis */}
+   514→          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   515→            <div className="space-y-2">
+   516→              <Label className="text-sm font-medium text-zinc-700">Descrição</Label>
+   517→              <Textarea
+   518→                placeholder="Descreva o serviço solicitado..."
+   519→                value={description}
+   520→                onChange={(e) => setDescription(e.target.value)}
+   521→                rows={3}
+   522→              />
+   523→            </div>
+   524→            <div className="space-y-2">
+   525→              <Label className="text-sm font-medium text-zinc-700">Diagnóstico</Label>
+   526→              <Textarea
+   527→                placeholder="Diagnóstico do veículo..."
+   528→                value={diagnosis}
+   529→                onChange={(e) => setDiagnosis(e.target.value)}
+   530→                rows={3}
+   531→              />
+   532→            </div>
+   533→          </div>
+   534→
+   535→          <Separator />
+   536→
+   537→          {/* Items Section */}
+   538→          <div className="space-y-3">
+   539→            <div className="flex items-center justify-between">
+   540→              <Label className="text-sm font-semibold text-zinc-700">Itens da OS</Label>
+   541→              <div className="flex items-center gap-2">
+   542→                <Button type="button" variant="outline" size="sm" onClick={() => addItem('SERVICO')} className="gap-1 border-blue-200 text-blue-700 hover:bg-blue-50">
+   543→                  <Wrench className="w-3.5 h-3.5" /> Serviço
+   544→                </Button>
+   545→                <Button type="button" variant="outline" size="sm" onClick={() => addItem('PECA')} className="gap-1 border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+   546→                  <Package className="w-3.5 h-3.5" /> Peça
+   547→                </Button>
+   548→              </div>
+   549→            </div>
+   550→
+   551→            {/* Stock deduction info banner */}
+   552→            {items.some((i) => i.type === 'PECA' && i.partId) && (
+   553→              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-700 font-medium">
+   554→                <ArrowDownCircle className="w-4 h-4 shrink-0" />
+   555→                Ao salvar a OS, as peças serão automaticamente deduzidas do estoque. Ao cancelar a OS, o estoque será estornado.
+   556→              </div>
+   557→            )}
+   558→
+   559→            <div className="space-y-3">
+   560→              {items.map((item, index) => (
+   561→                <Card key={index} className={`p-3 ${item.type === 'PECA' ? 'bg-emerald-50 border-emerald-200' : 'bg-blue-50 border-blue-200'}`}>
+   562→                  <div className="flex items-center gap-2 mb-2">
+   563→                    {item.type === 'PECA' ? (
+   564→                      <Package className="w-4 h-4 text-emerald-600" />
+   565→                    ) : (
+   566→                      <Wrench className="w-4 h-4 text-blue-600" />
+   567→                    )}
+   568→                    <span className={`text-xs font-semibold ${item.type === 'PECA' ? 'text-emerald-700' : 'text-blue-700'}`}>
+   569→                      {item.type === 'PECA' ? 'Peça' : 'Serviço'}
+   570→                    </span>
+   571→                    {item.type === 'PECA' && item.partId && (
+   572→                      <span className="text-xs text-emerald-600 ml-auto">Estoque será deduzido ao salvar</span>
+   573→                    )}
+   574→                  </div>
+   575→                  <div className="grid grid-cols-12 gap-3 items-end">
+   576→                    <div className="col-span-2">
+   577→                      <Label className="text-xs text-zinc-500">Tipo</Label>
+   578→                      <Select
+   579→                        value={item.type}
+   580→                        onValueChange={(v) => updateItem(index, 'type', v)}
+   581→                      >
+   582→                        <SelectTrigger className="h-9 text-xs">
+   583→                          <SelectValue />
+   584→                        </SelectTrigger>
+   585→                        <SelectContent>
+   586→                          <SelectItem value="SERVICO">
+   587→                            <span className="flex items-center gap-1">
+   588→                              <Wrench className="w-3 h-3" /> Serviço
+   589→                            </span>
+   590→                          </SelectItem>
+   591→                          <SelectItem value="PECA">
+   592→                            <span className="flex items-center gap-1">
+   593→                              <Package className="w-3 h-3" /> Peça
+   594→                            </span>
+   595→                          </SelectItem>
+   596→                        </SelectContent>
+   597→                      </Select>
+   598→                    </div>
+   599→
+   600→                    {item.type === 'PECA' ? (
+   601→                      <div className="col-span-3">
+   602→                        <Label className="text-xs text-zinc-500">Peça</Label>
+   603→                        <Select
+   604→                          value={item.partId || ''}
+   605→                          onValueChange={(v) => updateItem(index, 'partId', v)}
+   606→                        >
+   607→                          <SelectTrigger className={`h-9 text-xs ${item.partId && parts.find(p => p.id === item.partId) && parts.find(p => p.id === item.partId)!.quantity < item.quantity ? 'border-red-300 bg-red-50' : ''}`}>
+   608→                            <SelectValue placeholder="Selecione..." />
+   609→                          </SelectTrigger>
+   610→                          <SelectContent>
+   611→                            {parts.map((p) => (
+   612→                              <SelectItem key={p.id} value={p.id} disabled={p.quantity <= 0}>
+   613→                                <span className="flex items-center gap-1">
+   614→                                  {p.sku} - {p.description}
+   615→                                  <span className={`text-xs ml-1 ${p.quantity <= 0 ? 'text-red-500 font-bold' : p.quantity <= 5 ? 'text-amber-500' : 'text-green-600'}`}>
+   616→                                    (Est: {p.quantity})
+   617→                                  </span>
+   618→                                </span>
+   619→                              </SelectItem>
+   620→                            ))}
+   621→                          </SelectContent>
+   622→                        </Select>
+   623→                      </div>
+   624→                    ) : (
+   625→                      <div className="col-span-3">
+   626→                        <Label className="text-xs text-zinc-500">Descrição</Label>
+   627→                        <Input
+   628→                          className="h-9 text-xs"
+   629→                          placeholder="Descrição do serviço"
+   630→                          value={item.description}
+   631→                          onChange={(e) => updateItem(index, 'description', e.target.value)}
+   632→                        />
+   633→                      </div>
+   634→                    )}
+   635→
+   636→                    <div className="col-span-1">
+   637→                      <Label className="text-xs text-zinc-500">Qtd</Label>
+   638→                      <Input
+   639→                        type="number"
+   640→                        className="h-9 text-xs"
+   641→                        min={1}
+   642→                        value={item.quantity}
+   643→                        onChange={(e) => updateItem(index, 'quantity', Number(e.target.value))}
+   644→                      />
+   645→                    </div>
+   646→
+   647→                    <div className="col-span-2">
+   648→                      <Label className="text-xs text-zinc-500">Preço Unit.</Label>
+   649→                      <Input
+   650→                        type="number"
+   651→                        className="h-9 text-xs"
+   652→                        min={0}
+   653→                        step={0.01}
+   654→                        value={item.unitPrice}
+   655→                        onChange={(e) => updateItem(index, 'unitPrice', Number(e.target.value))}
+   656→                      />
+   657→                    </div>
+   658→
+   659→                    <div className="col-span-2">
+   660→                      <Label className="text-xs text-zinc-500">Total</Label>
+   661→                      <div className="h-9 px-3 flex items-center bg-zinc-100 rounded-md border text-xs font-medium text-zinc-700">
+   662→                        {formatCurrency(item.totalPrice)}
+   663→                      </div>
+   664→                    </div>
+   665→
+   666→                    <div className="col-span-2 flex items-center justify-center gap-1">
+   667→                      <Button
+   668→                        type="button"
+   669→                        variant="ghost"
+   670→                        size="sm"
+   671→                        onClick={() => removeItem(index)}
+   672→                        disabled={items.length <= 1}
+   673→                        className="h-9 w-9 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+   674→                      >
+   675→                        <Trash2 className="w-4 h-4" />
+   676→                      </Button>
+   677→                    </div>
+   678→                  </div>
+   679→
+   680→                  {/* Mechanic row - only for SERVICO type */}
+   681→                  {item.type === 'SERVICO' && (
+   682→                    <div className="grid grid-cols-12 gap-2 items-end mt-2 pt-2 border-t border-zinc-200">
+   683→                      <div className="col-span-4">
+   684→                        <Label className="text-xs text-zinc-500">Mecânico</Label>
+   685→                        <Select
+   686→                          value={item.mechanicId || ''}
+   687→                          onValueChange={(v) => updateItem(index, 'mechanicId', v || null)}
+   688→                        >
+   689→                          <SelectTrigger className="h-9 text-xs">
+   690→                            <SelectValue placeholder="Selecione o mecânico..." />
+   691→                          </SelectTrigger>
+   692→                          <SelectContent>
+   693→                            {mechanics.map((m) => (
+   694→                              <SelectItem key={m.id} value={m.id}>
+   695→                                {m.name} {m.specialty ? `(${m.specialty})` : ''} - {m.commissionPct}%
+   696→                              </SelectItem>
+   697→                            ))}
+   698→                          </SelectContent>
+   699→                        </Select>
+   700→                      </div>
+   701→                      <div className="col-span-2">
+   702→                        <Label className="text-xs text-zinc-500">Comissão %</Label>
+   703→                        <Input
+   704→                          type="number"
+   705→                          className="h-9 text-xs"
+   706→                          min={0}
+   707→                          max={100}
+   708→                          step={0.5}
+   709→                          value={item.commissionPct || 0}
+   710→                          onChange={(e) => {
+   711→                            let val = parseFloat(e.target.value) || 0
+   712→                            if (val < 0) val = 0
+   713→                            if (val > 100) val = 100
+   714→                            updateItem(index, 'commissionPct', val)
+   715→                          }}
+   716→                          disabled={!item.mechanicId}
+   717→                        />
+   718→                      </div>
+   719→                      <div className="col-span-3 flex items-end">
+   720→                        {item.mechanicId && (item.commissionPct ?? 0) > 0 && (
+   721→                          <div className="h-9 px-3 flex items-center bg-emerald-50 rounded-md border border-emerald-200 text-xs font-medium text-emerald-700">
+   722→                            Comissão: {formatCurrency(item.totalPrice * ((item.commissionPct || 0) / 100))}
+   723→                          </div>
+   724→                        )}
+   725→                      </div>
+   726→                      <div className="col-span-3 flex items-end justify-end">
+   727→                        {item.mechanicId && (
+   728→                          <Button
+   729→                            type="button"
+   730→                            variant="ghost"
+   731→                            size="sm"
+   732→                            onClick={() => updateItem(index, 'mechanicId', null)}
+   733→                            className="h-7 text-xs text-zinc-400 hover:text-red-500"
+   734→                          >
+   735→                            Remover mecânico
+   736→                          </Button>
+   737→                        )}
+   738→                      </div>
+   739→                    </div>
+   740→                  )}
+   741→
+   742→                  {/* Stock deduction indicator - only for PECA type */}
+   743→                  {item.type === 'PECA' && item.partId && (
+   744→                    <div className="mt-2 pt-2 border-t border-zinc-200">
+   745→                      {(() => {
+   746→                        const part = parts.find((p) => p.id === item.partId)
+   747→                        if (!part) return null
+   748→                        const hasStock = part.quantity >= item.quantity
+   749→                        const lowStock = part.quantity > 0 && part.quantity <= 5
+   750→                        return (
+   751→                          <div className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium ${
+   752→                            hasStock
+   753→                              ? lowStock
+   754→                                ? 'bg-amber-50 border border-amber-200 text-amber-700'
+   755→                                : 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+   756→                              : 'bg-red-50 border border-red-200 text-red-700'
+   757→                          }`}>
+   758→                            {!hasStock ? (
+   759→                              <>
+   760→                                <AlertTriangle className="w-3.5 h-3.5" />
+   761→                                Estoque insuficiente! Disponível: {part.quantity} un | Necessário: {item.quantity} un
+   762→                              </>
+   763→                            ) : (
+   764→                              <>
+   765→                                <ArrowDownCircle className="w-3.5 h-3.5" />
+   766→                                {lowStock ? (
+   767→                                  <>Estoque baixo! Serão deduzidas {item.quantity} un de {part.quantity} disponíveis</>
+   768→                                ) : (
+   769→                                  <>Baixa no estoque: {item.quantity} un de {part.quantity} disponíveis</>
+   770→                                )}
+   771→                              </>
+   772→                            )}
+   773→                          </div>
+   774→                        )
+   775→                      })()}
+   776→                    </div>
+   777→                  )}
+   778→                </Card>
+   779→              ))}
+   780→            </div>
+   781→          </div>
+   782→
+   783→          <Separator />
+   784→
+   785→          {/* Totals */}
+   786→          <div className="flex flex-col items-end gap-2">
+   787→            <div className="w-full max-w-sm space-y-2">
+   788→              <div className="flex justify-between text-sm">
+   789→                <span className="text-zinc-500">Total Peças:</span>
+   790→                <span className="font-medium">{formatCurrency(totalParts)}</span>
+   791→              </div>
+   792→              <div className="flex justify-between text-sm">
+   793→                <span className="text-zinc-500">Total Serviços:</span>
+   794→                <span className="font-medium">{formatCurrency(totalServices)}</span>
+   795→              </div>
+   796→              <div className="flex justify-between text-sm items-center">
+   797→                <div className="flex items-center gap-2">
+   798→                  <span className="text-zinc-500">Desconto:</span>
+   799→                  <div className="flex items-center gap-0.5 bg-zinc-100 rounded-md p-0.5">
+   800→                    <button
+   801→                      type="button"
+   802→                      onClick={() => { setDiscountType('VALUE'); setDiscount(0) }}
+   803→                      className={`px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${
+   804→                        discountType === 'VALUE' ? 'bg-white text-emerald-700 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+   805→                      }`}
+   806→                    >
+   807→                      R$
+   808→                    </button>
+   809→                    <button
+   810→                      type="button"
+   811→                      onClick={() => { setDiscountType('PERCENT'); setDiscount(0) }}
+   812→                      className={`px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${
+   813→                        discountType === 'PERCENT' ? 'bg-white text-emerald-700 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+   814→                      }`}
+   815→                    >
+   816→                      %
+   817→                    </button>
+   818→                  </div>
+   819→                </div>
+   820→                <div className="flex items-center gap-1">
+   821→                  <Input
+   822→                    type="number"
+   823→                    min={0}
+   824→                    step={discountType === 'PERCENT' ? 1 : 0.01}
+   825→                    max={discountType === 'PERCENT' ? 100 : subtotal}
+   826→                    value={discount || ''}
+   827→                    onChange={(e) => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
+   828→                    placeholder={discountType === 'VALUE' ? '0,00' : '0'}
+   829→                    className="h-8 w-24 text-sm text-right"
+   830→                  />
+   831→                </div>
+   832→              </div>
+   833→              {discountType === 'PERCENT' && discount > 0 && (
+   834→                <div className="flex justify-end">
+   835→                  <p className="text-xs text-zinc-400">{discount}% = {formatCurrency(discountValue)} de desconto</p>
+   836→                </div>
+   837→              )}
+   838→              <Separator />
+   839→              <div className="flex justify-between text-base font-bold">
+   840→                <span className="text-zinc-800">Total Geral:</span>
+   841→                <span className="text-emerald-700">{formatCurrency(totalAmount)}</span>
+   842→              </div>
+   843→            </div>
+   844→          </div>
+   845→        </div>
+   846→
+   847→        <DialogFooter className="gap-2">
+   848→          <Button variant="outline" onClick={onClose}>
+   849→            Cancelar
+   850→          </Button>
+   851→          <Button
+   852→            onClick={handleSave}
+   853→            disabled={loading || !selectedClientId || !selectedVehicleId || items.length === 0}
+   854→            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   855→          >
+   856→            {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+   857→            {editingOS ? 'Salvar Alterações' : 'Criar OS'}
+   858→          </Button>
+   859→        </DialogFooter>
+   860→      </DialogContent>
+   861→    </Dialog>
+   862→  )
+   863→}
+   864→
+   865→// =============================================
+   866→// PAYMENT DIALOG
+   867→// =============================================
+   868→function PaymentDialog({
+   869→  open,
+   870→  onClose,
+   871→  onConfirm,
+   872→  loading,
+   873→}: {
+   874→  open: boolean
+   875→  onClose: () => void
+   876→  onConfirm: (method: string) => Promise<void>
+   877→  loading: boolean
+   878→}) {
+   879→  const [method, setMethod] = useState('')
+   880→
+   881→  return (
+   882→    <Dialog open={open} onOpenChange={onClose}>
+   883→      <DialogContent className="max-w-sm">
+   884→        <DialogHeader>
+   885→          <DialogTitle className="text-lg font-semibold text-zinc-900">Registrar Pagamento</DialogTitle>
+   886→        </DialogHeader>
+   887→        <div className="space-y-4 py-2">
+   888→          <div className="space-y-2">
+   889→            <Label className="text-sm font-medium text-zinc-700">Forma de Pagamento *</Label>
+   890→            <Select value={method} onValueChange={setMethod}>
+   891→              <SelectTrigger className="w-full">
+   892→                <SelectValue placeholder="Selecione..." />
+   893→              </SelectTrigger>
+   894→              <SelectContent>
+   895→                <SelectItem value="PIX">PIX</SelectItem>
+   896→                <SelectItem value="CARTAO">Cartão</SelectItem>
+   897→                <SelectItem value="DINHEIRO">Dinheiro</SelectItem>
+   898→              </SelectContent>
+   899→            </Select>
+   900→          </div>
+   901→        </div>
+   902→        <DialogFooter className="gap-2">
+   903→          <Button variant="outline" onClick={onClose}>
+   904→            Cancelar
+   905→          </Button>
+   906→          <Button
+   907→            onClick={() => onConfirm(method)}
+   908→            disabled={loading || !method}
+   909→            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   910→          >
+   911→            {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+   912→            Confirmar Pagamento
+   913→          </Button>
+   914→        </DialogFooter>
+   915→      </DialogContent>
+   916→    </Dialog>
+   917→  )
+   918→}
+   919→
+   920→// =============================================
+   921→// OS DETAIL VIEW
+   922→// =============================================
+   923→function OSDetail({
+   924→  os,
+   925→  onBack,
+   926→  onStatusChange,
+   927→  onEdit,
+   928→}: {
+   929→  os: ServiceOrder
+   930→  onBack: () => void
+   931→  onStatusChange: (id: string, status: OSStatus, paymentMethod?: string) => Promise<void>
+   932→  onEdit: (os: ServiceOrder) => void
+   933→}) {
+   934→  const [statusLoading, setStatusLoading] = useState(false)
+   935→  const [paymentOpen, setPaymentOpen] = useState(false)
+   936→  const [showReceipt, setShowReceipt] = useState(false)
+   937→  const [receiptMode, setReceiptMode] = useState<'receipt' | 'closure'>('receipt')
+   938→  const { office, user } = useAuthStore()
+   939→  const [receiptLogo, setReceiptLogo] = useState<string | null>(office?.logo || null)
+   940→
+   941→  // Client Invoice state
+   942→  const [showClientInvoice, setShowClientInvoice] = useState(false)
+   943→  const [clientInvoiceData, setClientInvoiceData] = useState<ClientInvoiceData | null>(null)
+   944→  const [generatingNF, setGeneratingNF] = useState(false)
+   945→
+   946→  // WhatsApp integration state
+   947→  const [waEnabled, setWaEnabled] = useState(false)
+   948→  const [waSending, setWaSending] = useState(false)
+   949→  const [waMessage, setWaMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+   950→
+   951→  // Fetch WhatsApp config
+   952→  useEffect(() => {
+   953→    const fetchWaConfig = async () => {
+   954→      if (!office) return
+   955→      try {
+   956→        const res = await apiFetch(`/api/whatsapp/config?officeId=${office.id}`)
+   957→        if (res.success && res.data) {
+   958→          setWaEnabled(res.data.enabled && res.data.configured && res.data.hasToken)
+   959→        }
+   960→      } catch {
+   961→        // Silently handle
+   962→      }
+   963→    }
+   964→    fetchWaConfig()
+   965→  }, [office])
+   966→
+   967→  const handleSendWhatsApp = async (mode: 'estimate' | 'receipt') => {
+   968→    if (!office) return
+   969→    setWaSending(true)
+   970→    setWaMessage(null)
+   971→    try {
+   972→      const res = await apiFetch('/api/whatsapp/send-os', {
+   973→        method: 'POST',
+   974→        headers: { 'Content-Type': 'application/json' },
+   975→        body: JSON.stringify({
+   976→          officeId: office.id,
+   977→          serviceOrderId: os.id,
+   978→          mode,
+   979→        }),
+   980→      })
+   981→      if (res.success) {
+   982→        const phone = res.data?.phone || os.client.phone || ''
+   983→        setWaMessage({
+   984→          type: 'success',
+   985→          text: `${mode === 'estimate' ? 'Orçamento' : 'Recibo'} enviado via WhatsApp para ${phone}`,
+   986→        })
+   987→      } else {
+   988→        setWaMessage({
+   989→          type: 'error',
+   990→          text: res.error || 'Erro ao enviar via WhatsApp',
+   991→        })
+   992→      }
+   993→    } catch {
+   994→      setWaMessage({ type: 'error', text: 'Erro de conexão ao enviar via WhatsApp' })
+   995→    } finally {
+   996→      setWaSending(false)
+   997→      setTimeout(() => setWaMessage(null), 5000)
+   998→    }
+   999→  }
+  1000→
+  1001→  // Resolve logo URL for API route serving
+  1002→  const resolveLogoUrl = (logo: string | null | undefined): string | null => {
+  1003→    if (!logo) return null
+  1004→    if (logo.startsWith('http') || logo.startsWith('data:')) return logo
+  1005→    return logo.replace(/^\/uploads\//, '/api/uploads/')
+  1006→  }
+  1007→
+  1008→  // Fetch fresh logo when receipt opens
+  1009→  const handleOpenReceipt = async (mode: 'receipt' | 'closure') => {
+  1010→    setReceiptMode(mode)
+  1011→    try {
+  1012→      const data = await apiFetch(`/api/auth/me`)
+  1013→      if (data.success && data.data?.office?.logo) {
+  1014→        setReceiptLogo(resolveLogoUrl(data.data.office.logo))
+  1015→      } else {
+  1016→        setReceiptLogo(resolveLogoUrl(office?.logo))
+  1017→      }
+  1018→    } catch {
+  1019→      setReceiptLogo(resolveLogoUrl(office?.logo))
+  1020→    }
+  1021→    setShowReceipt(true)
+  1022→  }
+  1023→
+  1024→  const handleStatusChange = async (newStatus: OSStatus, paymentMethod?: string) => {
+  1025→    setStatusLoading(true)
+  1026→    try {
+  1027→      await onStatusChange(os.id, newStatus, paymentMethod)
+  1028→    } finally {
+  1029→      setStatusLoading(false)
+  1030→      setPaymentOpen(false)
+  1031→    }
+  1032→  }
+  1033→
+  1034→  // Emit NF for this OS
+  1035→  const handleEmitNF = async () => {
+  1036→    if (!office) return
+  1037→    setGeneratingNF(true)
+  1038→    try {
+  1039→      const res = await apiFetch('/api/client-invoices', {
+  1040→        method: 'POST',
+  1041→        body: JSON.stringify({
+  1042→          officeId: office.id,
+  1043→          type: 'SERVICO',
+  1044→          serviceOrderId: os.id,
+  1045→        }),
+  1046→      })
+  1047→      if (res.success && res.data) {
+  1048→        const detailRes = await apiFetch(`/api/client-invoices/${res.data.id}?officeId=${office.id}`)
+  1049→        if (detailRes.success && detailRes.data) {
+  1050→          setClientInvoiceData(detailRes.data as ClientInvoiceData)
+  1051→          setShowClientInvoice(true)
+  1052→        }
+  1053→      } else {
+  1054→        alert(res.error || 'Erro ao emitir nota fiscal')
+  1055→      }
+  1056→    } catch {
+  1057→      alert('Erro de conexão ao emitir nota fiscal')
+  1058→    } finally {
+  1059→      setGeneratingNF(false)
+  1060→    }
+  1061→  }
+  1062→
+  1063→  const pecaItems = os.items.filter((i) => i.type === 'PECA')
+  1064→  const servicoItems = os.items.filter((i) => i.type === 'SERVICO')
+  1065→
+  1066→  return (
+  1067→    <div className="space-y-6">
+  1068→      {/* Header */}
+  1069→      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+  1070→        <div className="flex items-center gap-3">
+  1071→          <Button variant="ghost" size="sm" onClick={onBack} className="gap-1">
+  1072→            <ArrowLeft className="w-4 h-4" /> Voltar
+  1073→          </Button>
+  1074→          <div>
+  1075→            <h2 className="text-xl font-bold text-zinc-900">{os.number}</h2>
+  1076→            <p className="text-sm text-zinc-500">
+  1077→              Criada em {formatDate(os.createdAt)}
+  1078→            </p>
+  1079→          </div>
+  1080→        </div>
+  1081→        <div className="flex items-center gap-2">
+  1082→          <StatusBadge status={os.status} />
+  1083→          {os.status !== 'PAGA' && os.status !== 'CANCELADA' && (
+  1084→            <Button variant="outline" size="sm" onClick={() => onEdit(os)}>
+  1085→              Editar
+  1086→            </Button>
+  1087→          )}
+  1088→        </div>
+  1089→      </div>
+  1090→
+  1091→      {/* Status Timeline */}
+  1092→      <Card className="p-6">
+  1093→        <StatusTimeline status={os.status} />
+  1094→      </Card>
+  1095→
+  1096→      {/* Client & Vehicle Info */}
+  1097→      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1098→        <Card>
+  1099→          <CardHeader className="pb-3">
+  1100→            <CardTitle className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Cliente</CardTitle>
+  1101→          </CardHeader>
+  1102→          <CardContent className="space-y-1">
+  1103→            <p className="font-semibold text-zinc-900">{os.client.name}</p>
+  1104→            {os.client.phone && <p className="text-sm text-zinc-600">Tel: {os.client.phone}</p>}
+  1105→            {os.client.email && <p className="text-sm text-zinc-600">{os.client.email}</p>}
+  1106→          </CardContent>
+  1107→        </Card>
+  1108→        <Card>
+  1109→          <CardHeader className="pb-3">
+  1110→            <CardTitle className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Veículo</CardTitle>
+  1111→          </CardHeader>
+  1112→          <CardContent className="space-y-1">
+  1113→            <p className="font-semibold text-zinc-900">
+  1114→              {os.vehicle ? `${os.vehicle.brand || ''} ${os.vehicle.model || ''}`.trim() || '—' : '—'}
+  1115→            </p>
+  1116→            <p className="text-sm text-zinc-600">Placa: {os.vehicle?.plate || '—'}</p>
+  1117→            {os.vehicle?.year && <p className="text-sm text-zinc-600">Ano: {os.vehicle.year}</p>}
+  1118→            {os.vehicle?.color && <p className="text-sm text-zinc-600">Cor: {os.vehicle.color}</p>}
+  1119→          </CardContent>
+  1120→        </Card>
+  1121→      </div>
+  1122→
+  1123→      {/* Description & Diagnosis */}
+  1124→      {(os.description || os.diagnosis) && (
+  1125→        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1126→          {os.description && (
+  1127→            <Card>
+  1128→              <CardHeader className="pb-3">
+  1129→                <CardTitle className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Descrição</CardTitle>
+  1130→              </CardHeader>
+  1131→              <CardContent>
+  1132→                <p className="text-sm text-zinc-700 whitespace-pre-wrap">{os.description}</p>
+  1133→              </CardContent>
+  1134→            </Card>
+  1135→          )}
+  1136→          {os.diagnosis && (
+  1137→            <Card>
+  1138→              <CardHeader className="pb-3">
+  1139→                <CardTitle className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Diagnóstico</CardTitle>
+  1140→              </CardHeader>
+  1141→              <CardContent>
+  1142→                <p className="text-sm text-zinc-700 whitespace-pre-wrap">{os.diagnosis}</p>
+  1143→              </CardContent>
+  1144→            </Card>
+  1145→          )}
+  1146→        </div>
+  1147→      )}
+  1148→
+  1149→      {/* Items */}
+  1150→      <Card>
+  1151→        <CardHeader className="pb-3">
+  1152→          <CardTitle className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Itens</CardTitle>
+  1153→        </CardHeader>
+  1154→        <CardContent>
+  1155→          <Table>
+  1156→            <TableHeader>
+  1157→              <TableRow>
+  1158→                <TableHead>Tipo</TableHead>
+  1159→                <TableHead>Descrição</TableHead>
+  1160→                <TableHead>Mecânico</TableHead>
+  1161→                <TableHead className="text-right">Qtd</TableHead>
+  1162→                <TableHead className="text-right">Preço Unit.</TableHead>
+  1163→                <TableHead className="text-right">Total</TableHead>
+  1164→                <TableHead className="text-right">Comissão</TableHead>
+  1165→              </TableRow>
+  1166→            </TableHeader>
+  1167→            <TableBody>
+  1168→              {servicoItems.map((item) => (
+  1169→                <TableRow key={item.id}>
+  1170→                  <TableCell>
+  1171→                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+  1172→                      <Wrench className="w-3 h-3 mr-1" /> Serviço
+  1173→                    </Badge>
+  1174→                  </TableCell>
+  1175→                  <TableCell className="font-medium text-zinc-900">{item.description}</TableCell>
+  1176→                  <TableCell className="text-sm text-zinc-600">
+  1177→                    {item.mechanic ? (
+  1178→                      <span className="flex items-center gap-1">
+  1179→                        <User className="w-3 h-3" /> {item.mechanic.name}
+  1180→                      </span>
+  1181→                    ) : '—'}
+  1182→                  </TableCell>
+  1183→                  <TableCell className="text-right">{item.quantity}</TableCell>
+  1184→                  <TableCell className="text-right">{formatCurrency(item.unitPrice)}</TableCell>
+  1185→                  <TableCell className="text-right font-medium">{formatCurrency(item.totalPrice)}</TableCell>
+  1186→                  <TableCell className="text-right text-emerald-700 text-xs">
+  1187→                    {item.mechanicId && item.commissionPct ? `${item.commissionPct}% = ${formatCurrency(item.totalPrice * ((item.commissionPct || 0) / 100))}` : '—'}
+  1188→                  </TableCell>
+  1189→                </TableRow>
+  1190→              ))}
+  1191→              {pecaItems.map((item) => (
+  1192→                <TableRow key={item.id}>
+  1193→                  <TableCell>
+  1194→                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">
+  1195→                      <Package className="w-3 h-3 mr-1" /> Peça
+  1196→                    </Badge>
+  1197→                  </TableCell>
+  1198→                  <TableCell className="font-medium text-zinc-900">
+  1199→                    {item.description}
+  1200→                    <span className="ml-2 text-xs text-emerald-600 inline-flex items-center gap-0.5">
+  1201→                      <ArrowDownCircle className="w-3 h-3" /> Baixa estoque
+  1202→                    </span>
+  1203→                  </TableCell>
+  1204→                  <TableCell className="text-sm text-zinc-600">—</TableCell>
+  1205→                  <TableCell className="text-right">{item.quantity}</TableCell>
+  1206→                  <TableCell className="text-right">{formatCurrency(item.unitPrice)}</TableCell>
+  1207→                  <TableCell className="text-right font-medium">{formatCurrency(item.totalPrice)}</TableCell>
+  1208→                  <TableCell className="text-right">—</TableCell>
+  1209→                </TableRow>
+  1210→              ))}
+  1211→            </TableBody>
+  1212→          </Table>
+  1213→
+  1214→          {/* Totals */}
+  1215→          <div className="mt-4 flex justify-end">
+  1216→            <div className="w-full max-w-xs space-y-1.5">
+  1217→              <div className="flex justify-between text-sm">
+  1218→                <span className="text-zinc-500">Total Serviços:</span>
+  1219→                <span className="font-medium">{formatCurrency(os.totalServices)}</span>
+  1220→              </div>
+  1221→              <div className="flex justify-between text-sm">
+  1222→                <span className="text-zinc-500">Total Peças:</span>
+  1223→                <span className="font-medium">{formatCurrency(os.totalParts)}</span>
+  1224→              </div>
+  1225→              {os.totalDiscount > 0 && (
+  1226→                <div className="flex justify-between text-sm">
+  1227→                  <span className="text-zinc-500">Desconto:</span>
+  1228→                  <span className="font-medium text-red-600">-{formatCurrency(os.totalDiscount)}</span>
+  1229→                </div>
+  1230→              )}
+  1231→              <Separator />
+  1232→              <div className="flex justify-between text-base font-bold">
+  1233→                <span className="text-zinc-800">Total:</span>
+  1234→                <span className="text-emerald-700">{formatCurrency(os.totalAmount)}</span>
+  1235→              </div>
+  1236→              {/* Commission total */}
+  1237→              {os.items.some((i: ServiceOrderItem) => i.mechanicId && i.commissionPct && i.commissionPct > 0) && (
+  1238→                <>
+  1239→                  <Separator />
+  1240→                  <div className="flex justify-between text-sm">
+  1241→                    <span className="text-emerald-600 flex items-center gap-1">
+  1242→                      <DollarSign className="w-3.5 h-3.5" /> Total Comissões:
+  1243→                    </span>
+  1244→                    <span className="font-semibold text-emerald-700">
+  1245→                      {formatCurrency(
+  1246→                        os.items
+  1247→                          .filter((i: ServiceOrderItem) => i.type === 'SERVICO' && i.mechanicId && i.commissionPct)
+  1248→                          .reduce((sum: number, i: ServiceOrderItem) => sum + (i.totalPrice * ((i.commissionPct || 0) / 100)), 0)
+  1249→                      )}
+  1250→                    </span>
+  1251→                  </div>
+  1252→                </>
+  1253→              )}
+  1254→              {os.paymentMethod && (
+  1255→                <div className="flex justify-between text-sm">
+  1256→                  <span className="text-zinc-500">Pagamento:</span>
+  1257→                  <span className="font-medium text-zinc-700">
+  1258→                    {os.paymentMethod === 'PIX' ? 'PIX' : os.paymentMethod === 'CARTAO' ? 'Cartão' : 'Dinheiro'}
+  1259→                  </span>
+  1260→                </div>
+  1261→              )}
+  1262→              {os.paidAt && (
+  1263→                <div className="flex justify-between text-sm">
+  1264→                  <span className="text-zinc-500">Pago em:</span>
+  1265→                  <span className="font-medium text-zinc-700">{formatDate(os.paidAt)}</span>
+  1266→                </div>
+  1267→              )}
+  1268→            </div>
+  1269→          </div>
+  1270→        </CardContent>
+  1271→      </Card>
+  1272→
+  1273→      {/* Action Buttons */}
+  1274→      <div className="flex flex-wrap gap-3">
+  1275→        {os.status === 'ABERTA' && (
+  1276→          <Button
+  1277→            onClick={() => handleStatusChange('EM_EXECUCAO')}
+  1278→            disabled={statusLoading}
+  1279→            className="bg-yellow-500 hover:bg-yellow-600 text-white gap-2"
+  1280→          >
+  1281→            {statusLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+  1282→            Iniciar Execução
+  1283→          </Button>
+  1284→        )}
+  1285→        {os.status === 'EM_EXECUCAO' && (
+  1286→          <Button
+  1287→            onClick={() => handleStatusChange('FINALIZADA')}
+  1288→            disabled={statusLoading}
+  1289→            className="bg-green-600 hover:bg-green-700 text-white gap-2"
+  1290→          >
+  1291→            {statusLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+  1292→            Finalizar
+  1293→          </Button>
+  1294→        )}
+  1295→        {os.status === 'FINALIZADA' && (
+  1296→          <Button
+  1297→            onClick={() => setPaymentOpen(true)}
+  1298→            disabled={statusLoading}
+  1299→            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+  1300→          >
+  1301→            {statusLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+  1302→            Registrar Pagamento
+  1303→          </Button>
+  1304→        )}
+  1305→        {os.status !== 'CANCELADA' && os.status !== 'PAGA' && (
+  1306→          <Button
+  1307→            variant="outline"
+  1308→            onClick={() => handleStatusChange('CANCELADA')}
+  1309→            disabled={statusLoading}
+  1310→            className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 gap-2"
+  1311→          >
+  1312→            <XCircle className="w-4 h-4" /> Cancelar OS
+  1313→          </Button>
+  1314→        )}
+  1315→        {/* Print Buttons */}
+  1316→        <Button
+  1317→          variant="outline"
+  1318→          onClick={() => handleOpenReceipt('closure')}
+  1319→          className="border-zinc-300 text-zinc-700 hover:bg-zinc-50 gap-2"
+  1320→        >
+  1321→          <Printer className="w-4 h-4" /> Imprimir OS
+  1322→        </Button>
+  1323→        {os.status === 'PAGA' && (
+  1324→          <Button
+  1325→            variant="outline"
+  1326→            onClick={() => handleOpenReceipt('receipt')}
+  1327→            className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 gap-2"
+  1328→          >
+  1329→            <Printer className="w-4 h-4" /> Recibo de Pagamento
+  1330→          </Button>
+  1331→        )}
+  1332→        {os.status === 'PAGA' && (
+  1333→          <Button
+  1334→            variant="outline"
+  1335→            onClick={handleEmitNF}
+  1336→            disabled={generatingNF}
+  1337→            className="border-amber-300 text-amber-700 hover:bg-amber-50 gap-2"
+  1338→          >
+  1339→            {generatingNF ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} Emitir Nota Fiscal
+  1340→          </Button>
+  1341→        )}
+  1342→
+  1343→        {/* WhatsApp Buttons */}
+  1344→        {waEnabled && (
+  1345→          <>
+  1346→            <Button
+  1347→              variant="outline"
+  1348→              onClick={() => handleSendWhatsApp('estimate')}
+  1349→              disabled={waSending}
+  1350→              className="border-green-300 text-green-700 hover:bg-green-50 gap-2"
+  1351→            >
+  1352→              {waSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
+  1353→              Enviar Orçamento
+  1354→            </Button>
+  1355→            {os.status === 'PAGA' && (
+  1356→              <Button
+  1357→                variant="outline"
+  1358→                onClick={() => handleSendWhatsApp('receipt')}
+  1359→                disabled={waSending}
+  1360→                className="border-green-300 text-green-700 hover:bg-green-50 gap-2"
+  1361→              >
+  1362→                {waSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
+  1363→                Enviar Recibo
+  1364→              </Button>
+  1365→            )}
+  1366→          </>
+  1367→        )}
+  1368→      </div>
+  1369→
+  1370→      {/* WhatsApp Message */}
+  1371→      {waMessage && (
+  1372→        <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${
+  1373→          waMessage.type === 'success'
+  1374→            ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+  1375→            : 'bg-red-50 border border-red-200 text-red-700'
+  1376→        }`}>
+  1377→          {waMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+  1378→          {waMessage.text}
+  1379→        </div>
+  1380→      )}
+  1381→
+  1382→      {/* Payment Dialog */}
+  1383→      <PaymentDialog
+  1384→        open={paymentOpen}
+  1385→        onClose={() => setPaymentOpen(false)}
+  1386→        onConfirm={(method) => handleStatusChange('PAGA', method)}
+  1387→        loading={statusLoading}
+  1388→      />
+  1389→
+  1390→      {/* Receipt Modal */}
+  1391→      <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
+  1392→        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+  1393→          <DialogHeader>
+  1394→            <DialogTitle className="text-lg font-semibold text-zinc-900">
+  1395→              {receiptMode === 'receipt' ? 'Recibo de Pagamento' : 'Ordem de Serviço'}
+  1396→            </DialogTitle>
+  1397→          </DialogHeader>
+  1398→          {office && (
+  1399→            <OSReceipt
+  1400→              os={os}
+  1401→              office={{
+  1402→                name: office.name,
+  1403→                cnpj: office.cnpj,
+  1404→                email: office.email,
+  1405→                phone: office.phone,
+  1406→                address: office.address,
+  1407→                city: office.city,
+  1408→                state: office.state,
+  1409→                logo: receiptLogo,
+  1410→              }}
+  1411→              mode={receiptMode}
+  1412→              onClose={() => setShowReceipt(false)}
+  1413→            />
+  1414→          )}
+  1415→        </DialogContent>
+  1416→      </Dialog>
+  1417→
+  1418→      {/* Client Invoice Modal */}
+  1419→      <Dialog open={showClientInvoice} onOpenChange={setShowClientInvoice}>
+  1420→        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+  1421→          <DialogHeader>
+  1422→            <DialogTitle>Nota Fiscal de Serviço</DialogTitle>
+  1423→          </DialogHeader>
+  1424→          {clientInvoiceData && (
+  1425→            <ClientInvoiceDoc
+  1426→              invoice={clientInvoiceData}
+  1427→              onClose={() => setShowClientInvoice(false)}
+  1428→            />
+  1429→          )}
+  1430→        </DialogContent>
+  1431→      </Dialog>
+  1432→    </div>
+  1433→  )
+  1434→}
+  1435→
+  1436→// =============================================
+  1437→// MAIN COMPONENT
+  1438→// =============================================
+  1439→export function ServiceOrdersModule() {
+  1440→  const { user } = useAuthStore()
+  1441→  const officeId = user?.officeId || ''
+  1442→
+  1443→  const [orders, setOrders] = useState<ServiceOrder[]>([])
+  1444→  const [loading, setLoading] = useState(true)
+  1445→  const [statusFilter, setStatusFilter] = useState<string>('all')
+  1446→  const [search, setSearch] = useState('')
+  1447→  const [page, setPage] = useState(1)
+  1448→  const [totalPages, setTotalPages] = useState(1)
+  1449→  const limit = 10
+  1450→
+  1451→  const [selectedOS, setSelectedOS] = useState<ServiceOrder | null>(null)
+  1452→  const [editingOS, setEditingOS] = useState<ServiceOrder | null>(null)
+  1453→  const [formOpen, setFormOpen] = useState(false)
+  1454→
+  1455→  const fetchOrders = useCallback(async () => {
+  1456→    if (!officeId) return
+  1457→    setLoading(true)
+  1458→    try {
+  1459→      const params = new URLSearchParams({ officeId })
+  1460→      if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter)
+  1461→      if (search) params.set('search', search)
+  1462→      params.set('page', String(page))
+  1463→      params.set('limit', String(limit))
+  1464→
+  1465→      const res = await apiFetch(`/api/service-orders?${params.toString()}`)
+  1466→      if (res.success) {
+  1467→        setOrders(res.data)
+  1468→        const total = res.data.length
+  1469→        setTotalPages(Math.max(1, Math.ceil(total / limit)))
+  1470→      }
+  1471→    } catch (err) {
+  1472→      console.error('Error fetching service orders:', err)
+  1473→    } finally {
+  1474→      setLoading(false)
+  1475→    }
+  1476→  }, [officeId, statusFilter, search, page])
+  1477→
+  1478→  useEffect(() => {
+  1479→    fetchOrders()
+  1480→  }, [fetchOrders])
+  1481→
+  1482→  const handleStatusChange = async (id: string, newStatus: OSStatus, paymentMethod?: string) => {
+  1483→    try {
+  1484→      const res = await apiFetch(`/api/service-orders/${id}/status`, {
+  1485→        method: 'PUT',
+  1486→        body: JSON.stringify({ status: newStatus, paymentMethod }),
+  1487→      })
+  1488→      if (res.success) {
+  1489→        await fetchOrders()
+  1490→        // Refresh detail view
+  1491→        const detailRes = await apiFetch(`/api/service-orders/${id}`)
+  1492→        if (detailRes.success) setSelectedOS(detailRes.data)
+  1493→      }
+  1494→    } catch (err) {
+  1495→      console.error('Error changing status:', err)
+  1496→    }
+  1497→  }
+  1498→
+  1499→  const handleSaveOS = async () => {
+  1500→    await fetchOrders()
+  1501→  }
+  1502→
+  1503→  const handleEdit = (os: ServiceOrder) => {
+  1504→    setEditingOS(os)
+  1505→    setFormOpen(true)
+  1506→  }
+  1507→
+  1508→  // Detail view
+  1509→  if (selectedOS) {
+  1510→    return (
+  1511→      <div className="p-4 md:p-6">
+  1512→        <OSDetail
+  1513→          os={selectedOS}
+  1514→          onBack={() => setSelectedOS(null)}
+  1515→          onStatusChange={handleStatusChange}
+  1516→          onEdit={handleEdit}
+  1517→        />
+  1518→        <OSFormDialog
+  1519→          open={formOpen}
+  1520→          onClose={() => { setFormOpen(false); setEditingOS(null) }}
+  1521→          onSave={handleSaveOS}
+  1522→          editingOS={editingOS}
+  1523→        />
+  1524→      </div>
+  1525→    )
+  1526→  }
+  1527→
+  1528→  // List view
+  1529→  return (
+  1530→    <div className="p-4 md:p-6 space-y-6">
+  1531→      {/* Header */}
+  1532→      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+  1533→        <div>
+  1534→          <h1 className="text-2xl font-bold text-zinc-900">Ordens de Serviço</h1>
+  1535→          <p className="text-sm text-zinc-500">Gerencie as ordens de serviço da oficina</p>
+  1536→        </div>
+  1537→        <Button
+  1538→          onClick={() => { setEditingOS(null); setFormOpen(true) }}
+  1539→          className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+  1540→        >
+  1541→          <Plus className="w-4 h-4" /> Nova OS
+  1542→        </Button>
+  1543→      </div>
+  1544→
+  1545→      {/* Filters */}
+  1546→      <div className="flex flex-col sm:flex-row gap-3">
+  1547→        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1) }}>
+  1548→          <SelectTrigger className="w-full sm:w-48">
+  1549→            <SelectValue placeholder="Filtrar status" />
+  1550→          </SelectTrigger>
+  1551→          <SelectContent>
+  1552→            <SelectItem value="all">Todas</SelectItem>
+  1553→            <SelectItem value="ABERTA">Aberta</SelectItem>
+  1554→            <SelectItem value="EM_EXECUCAO">Em Execução</SelectItem>
+  1555→            <SelectItem value="FINALIZADA">Finalizada</SelectItem>
+  1556→            <SelectItem value="PAGA">Paga</SelectItem>
+  1557→            <SelectItem value="CANCELADA">Cancelada</SelectItem>
+  1558→          </SelectContent>
+  1559→        </Select>
+  1560→        <div className="relative flex-1">
+  1561→          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+  1562→          <Input
+  1563→            placeholder="Buscar por nº OS, cliente, veículo..."
+  1564→            value={search}
+  1565→            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+  1566→            className="pl-9"
+  1567→          />
+  1568→        </div>
+  1569→      </div>
+  1570→
+  1571→      {/* Table */}
+  1572→      <Card>
+  1573→        <CardContent className="p-0">
+  1574→          {loading ? (
+  1575→            <div className="flex items-center justify-center py-16">
+  1576→              <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+  1577→              <span className="ml-3 text-zinc-500">Carregando ordens...</span>
+  1578→            </div>
+  1579→          ) : orders.length === 0 ? (
+  1580→            <div className="flex flex-col items-center justify-center py-16 text-zinc-400">
+  1581→              <FileText className="w-12 h-12 mb-3" />
+  1582→              <p className="text-lg font-medium">Nenhuma ordem encontrada</p>
+  1583→              <p className="text-sm">Crie uma nova ordem de serviço para começar</p>
+  1584→            </div>
+  1585→          ) : (
+  1586→            <>
+  1587→              {/* Desktop Table */}
+  1588→              <div className="hidden md:block">
+  1589→                <Table>
+  1590→                  <TableHeader>
+  1591→                    <TableRow>
+  1592→                      <TableHead>Nº OS</TableHead>
+  1593→                      <TableHead>Cliente</TableHead>
+  1594→                      <TableHead>Veículo</TableHead>
+  1595→                      <TableHead>Status</TableHead>
+  1596→                      <TableHead className="text-right">Total</TableHead>
+  1597→                      <TableHead>Data</TableHead>
+  1598→                    </TableRow>
+  1599→                  </TableHeader>
+  1600→                  <TableBody>
+  1601→                    {orders.map((os) => (
+  1602→                      <TableRow
+  1603→                        key={os.id}
+  1604→                        className="cursor-pointer hover:bg-emerald-50/50"
+  1605→                        onClick={() => setSelectedOS(os)}
+  1606→                      >
+  1607→                        <TableCell className="font-medium text-zinc-900">{os.number}</TableCell>
+  1608→                        <TableCell>{os.client.name}</TableCell>
+  1609→                        <TableCell>
+  1610→                          <span className="font-medium">{os.vehicle?.plate || '—'}</span>
+  1611→                          <span className="text-zinc-500 ml-1">
+  1612→                            {os.vehicle ? `${os.vehicle.brand || ''} ${os.vehicle.model || ''}`.trim() : '—'}
+  1613→                          </span>
+  1614→                        </TableCell>
+  1615→                        <TableCell>
+  1616→                          <StatusBadge status={os.status as OSStatus} />
+  1617→                        </TableCell>
+  1618→                        <TableCell className="text-right font-medium text-emerald-700">
+  1619→                          {formatCurrency(os.totalAmount)}
+  1620→                        </TableCell>
+  1621→                        <TableCell className="text-zinc-500">{formatDate(os.createdAt)}</TableCell>
+  1622→                      </TableRow>
+  1623→                    ))}
+  1624→                  </TableBody>
+  1625→                </Table>
+  1626→              </div>
+  1627→
+  1628→              {/* Mobile Cards */}
+  1629→              <div className="md:hidden divide-y">
+  1630→                {orders.map((os) => (
+  1631→                  <div
+  1632→                    key={os.id}
+  1633→                    className="p-4 cursor-pointer hover:bg-emerald-50/50 transition-colors"
+  1634→                    onClick={() => setSelectedOS(os)}
+  1635→                  >
+  1636→                    <div className="flex items-center justify-between mb-2">
+  1637→                      <span className="font-semibold text-zinc-900">{os.number}</span>
+  1638→                      <StatusBadge status={os.status as OSStatus} />
+  1639→                    </div>
+  1640→                    <p className="text-sm text-zinc-700">{os.client.name}</p>
+  1641→                    <p className="text-xs text-zinc-500">
+  1642→                      {os.vehicle ? `${os.vehicle.plate} - ${os.vehicle.brand || ''} ${os.vehicle.model || ''}` : '—'}
+  1643→                    </p>
+  1644→                    <div className="flex items-center justify-between mt-2">
+  1645→                      <span className="text-xs text-zinc-400">{formatDate(os.createdAt)}</span>
+  1646→                      <span className="font-semibold text-emerald-700">{formatCurrency(os.totalAmount)}</span>
+  1647→                    </div>
+  1648→                  </div>
+  1649→                ))}
+  1650→              </div>
+  1651→            </>
+  1652→          )}
+  1653→        </CardContent>
+  1654→      </Card>
+  1655→
+  1656→      {/* Pagination */}
+  1657→      {totalPages > 1 && (
+  1658→        <div className="flex items-center justify-center gap-2">
+  1659→          <Button
+  1660→            variant="outline"
+  1661→            size="sm"
+  1662→            disabled={page <= 1}
+  1663→            onClick={() => setPage(page - 1)}
+  1664→          >
+  1665→            <ChevronLeft className="w-4 h-4" />
+  1666→          </Button>
+  1667→          <span className="text-sm text-zinc-600">
+  1668→            Página {page} de {totalPages}
+  1669→          </span>
+  1670→          <Button
+  1671→            variant="outline"
+  1672→            size="sm"
+  1673→            disabled={page >= totalPages}
+  1674→            onClick={() => setPage(page + 1)}
+  1675→          >
+  1676→            <ChevronRight className="w-4 h-4" />
+  1677→          </Button>
+  1678→        </div>
+  1679→      )}
+  1680→
+  1681→      {/* New/Edit Dialog */}
+  1682→      <OSFormDialog
+  1683→        open={formOpen}
+  1684→        onClose={() => { setFormOpen(false); setEditingOS(null) }}
+  1685→        onSave={handleSaveOS}
+  1686→        editingOS={editingOS}
+  1687→      />
+  1688→    </div>
+  1689→  )
+  1690→}
+  1691→
