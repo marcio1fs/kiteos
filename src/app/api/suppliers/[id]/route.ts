@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth, auditLog } from '@/lib/auth';
 import { isValidCNPJ } from '@/lib/server-validators';
@@ -60,7 +61,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: supplier });
   } catch (error) {
-    console.error('Get supplier error:', error);
+    logger.error('Get supplier error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }
@@ -140,7 +141,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: supplier });
   } catch (error) {
-    console.error('Update supplier error:', error);
+    logger.error('Update supplier error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }
@@ -184,7 +185,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, data: { message: 'Fornecedor removido com sucesso' } });
   } catch (error) {
-    console.error('Delete supplier error:', error);
+    logger.error('Delete supplier error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }

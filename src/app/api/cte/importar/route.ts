@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { getUfFromChave, type Ambiente } from '@/lib/sefaz/endpoints';
 import { applyRateLimit } from '@/lib/sefaz/rate-limiter';
+import { decryptFileContent, decryptPassword } from '@/lib/sefaz/certificate';
 import {
   consultaCte,
   downloadCte,
@@ -13,6 +14,7 @@ import {
   validateCteXmlStructure,
   type CteClientConfig,
 } from '@/lib/cte';
+import { logger } from '@/lib/logger';
 
 // Status que bloqueiam importação
 const BLOCKED_STATUSES = ['CANCELADO', 'DENEGADO', 'INUTILIZADO'];
@@ -95,12 +97,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Decrypt certificate PFX and passphrase for mTLS
+    let pfx: string | undefined;
+    let passphrase: string | undefined;
+    try {
+      if (certificado.arquivoContent && certificado.senhaCriptografada) {
+        pfx = decryptFileContent(certificado.arquivoContent);
+        passphrase = decryptPassword(certificado.senhaCriptografada);
+      }
+    } catch (certDecError) {
+      logger.error('Erro ao descriptografar certificado para CT-e:', { error: certDecError instanceof Error ? certDecError.message : String(certDecError) });
+    }
+
     // Build config from certificate
     const cnpjCpf = certificado.cnpjCpf || '';
     const config: CteClientConfig = {
       ambiente: certificado.ambiente as Ambiente,
       uf,
       cnpjCpf,
+      pfx,
+      passphrase,
     };
 
     // Step 1: Consulta CT-e para verificar status
@@ -352,7 +368,7 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error) {
-    console.error('Erro na importação CT-e:', error);
+    logger.error('Erro na importação CT-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         success: false,

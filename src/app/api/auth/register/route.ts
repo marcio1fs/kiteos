@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { signToken, hashPassword, auditLog, validatePasswordStrength } from '@/lib/auth';
+import { logger } from '@/lib/logger';
+import { signToken, hashPassword, auditLog, validatePasswordStrength, generateRefreshToken } from '@/lib/auth';
 import { isValidCNPJ } from '@/lib/server-validators';
+import { checkRateLimit, getClientIdentifier, RATE_LIMITS } from '@/lib/rate-limiter';
 
 export async function POST(request: NextRequest) {
   try {
+    const clientIp = getClientIdentifier(request);
+    const rateResult = checkRateLimit(`register:${clientIp}`, RATE_LIMITS.REGISTER);
+    if (!rateResult.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Limite de registros excedido. Tente novamente mais tarde.' },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const {
       // Office data
@@ -143,6 +154,10 @@ export async function POST(request: NextRequest) {
       officeId: result.office.id,
     });
 
+    // Generate refresh token for session renewal (was previously missing — users
+    // could never refresh after the 8h JWT expired, forcing re-login)
+    const refreshToken = await generateRefreshToken(result.user.id, result.user.role, result.office.id);
+
     await auditLog({
       action: 'CREATE',
       entity: 'Office',
@@ -161,10 +176,11 @@ export async function POST(request: NextRequest) {
       officeId: result.office.id,
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: {
         token,
+        refreshToken,
         user: {
           id: result.user.id,
           name: result.user.name,
@@ -180,9 +196,27 @@ export async function POST(request: NextRequest) {
         },
       },
     }, { status: 201 });
+
+    response.cookies.set('kiteos_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 8 * 60 * 60, // 8 hours
+    });
+
+    response.cookies.set('kiteos_refresh', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/auth/refresh',
+      maxAge: 7 * 24 * 60 * 60, // 7 days
+    });
+
+    return response;
   } catch (error) {
     // SECURITY FIX (#69): Don't log error details that might contain PII
-    console.error('Register error: [REDACTED]');
+    logger.error('Register error', { reason: 'REDACTED' });
     return NextResponse.json(
       { success: false, error: 'Erro interno do servidor' },
       { status: 500 }

@@ -184,7 +184,7 @@ function ClientFormDialog({
     setLookupSuccess(null)
   }, [editingClient, open])
 
-  /** Busca automática por CNPJ na BrasilAPI */
+  /** Busca automática por CNPJ via API com fallback multisserviço */
   const handleLookupCNPJ = async () => {
     const digits = cpfCnpj.replace(/\D/g, '')
     if (digits.length !== 14) return // Só busca para CNPJ
@@ -195,18 +195,19 @@ function ClientFormDialog({
       const res = await apiFetch(`/api/consulta/cnpj?cnpj=${digits}`)
       if (res.success && res.data) {
         const d = res.data
-        if (d.razaoSocial && !name.trim()) setName(d.razaoSocial)
-        if (d.nomeFantasia && !name.trim()) setName(d.nomeFantasia)
-        if (d.email && !email.trim()) setEmail(d.email)
-        if (d.telefone && !phone.trim()) {
+        if (d.razaoSocial) setName(d.razaoSocial)
+        else if (d.nomeFantasia) setName(d.nomeFantasia)
+        if (d.email) setEmail(d.email)
+        if (d.telefone) {
           const phoneDigits = d.telefone.replace(/\D/g, '')
           if (phoneDigits.length >= 10) setPhone(maskPhone(phoneDigits))
         }
-        if (d.address && !address.trim()) setAddress(d.address)
-        if (d.city && !city.trim()) setCity(d.city)
-        if (d.state && !state.trim()) setState(d.state)
-        if (d.zipCode && !zipCode.trim()) setZipCode(d.zipCode)
+        if (d.address) setAddress(d.address)
+        if (d.city) setCity(d.city)
+        if (d.state) setState(d.state)
+        if (d.zipCode) setZipCode(d.zipCode)
         setLookupSuccess('CNPJ')
+        showToast('Dados da empresa preenchidos automaticamente!', 'success')
       } else if (!res.success) {
         showToast(res.error || 'CNPJ não encontrado', 'error')
       }
@@ -518,7 +519,7 @@ function VehicleFormDialog({
     setLookupSuccess(false)
   }, [editingVehicle, open])
 
-  /** Busca automática por Placa na BrasilAPI */
+  /** Busca automática por Placa via API de veículos */
   const handleLookupPlaca = async () => {
     const cleanPlate = plate.toUpperCase().replace(/[^A-Z0-9]/g, '')
     if (!cleanPlate || (cleanPlate.length !== 7 && cleanPlate.length !== 8)) return
@@ -529,12 +530,13 @@ function VehicleFormDialog({
       const res = await apiFetch(`/api/consulta/placa?placa=${cleanPlate}`)
       if (res.success && res.data) {
         const d = res.data
-        if (d.brand && !brand.trim()) setBrand(d.brand)
-        if (d.model && !model.trim()) setModel(d.model)
-        if (d.year && !year.trim()) setYear(String(d.year))
-        if (d.color && !color.trim()) setColor(d.color)
-        if (d.chassi && !chassi.trim()) setChassi(d.chassi)
+        if (d.brand) setBrand(d.brand)
+        if (d.model) setModel(d.model)
+        if (d.year) setYear(String(d.year))
+        if (d.color) setColor(d.color)
+        if (d.chassi) setChassi(d.chassi)
         setLookupSuccess(true)
+        showToast('Dados do veículo preenchidos automaticamente!', 'success')
       } else if (!res.success) {
         showToast(res.error || 'Placa não encontrada', 'error')
       }

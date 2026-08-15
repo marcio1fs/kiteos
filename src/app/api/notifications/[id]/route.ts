@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
@@ -43,7 +44,7 @@ export async function GET(
     });
 
   } catch (error) {
-    console.error('Error fetching notification:', error);
+    logger.error('Error fetching notification:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao buscar notificação'] },
       { status: 500 }
@@ -119,7 +120,7 @@ export async function PUT(
     });
 
   } catch (error) {
-    console.error('Error updating notification:', error);
+    logger.error('Error updating notification:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao atualizar notificação'] },
       { status: 500 }

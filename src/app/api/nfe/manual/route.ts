@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit';
 import { isValidCNPJ, isValidNCM, isValidCFOP } from '@/lib/server-validators';
@@ -182,6 +183,7 @@ export async function POST(request: NextRequest) {
         officeId,
         items: {
           create: items.map((item: {
+            partId?: string;
             sku?: string;
             descricao: string;
             ncm: string;
@@ -200,6 +202,7 @@ export async function POST(request: NextRequest) {
             lote?: string;
             localizacao?: string;
           }) => ({
+            partId: item.partId || null,
             sku: item.sku || null,
             descricao: item.descricao,
             ncm: item.ncm,
@@ -261,7 +264,7 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error) {
-    console.error('Error creating manual NF-e:', error);
+    logger.error('Error creating manual NF-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         success: false,

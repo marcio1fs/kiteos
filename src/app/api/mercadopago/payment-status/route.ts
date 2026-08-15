@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { decryptToken } from '@/lib/token-encryption';
@@ -127,7 +128,7 @@ export async function GET(request: NextRequest) {
             }
           }
         } catch (e) {
-          console.error('Error refreshing payment status:', e);
+          logger.error('Error refreshing payment status', { error: e instanceof Error ? e.message : String(e) });
         }
       }
     }
@@ -143,7 +144,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error checking payment status:', error);
+    logger.error('Error checking payment status', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao verificar status do pagamento' },
       { status: 500 }

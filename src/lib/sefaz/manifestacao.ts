@@ -10,6 +10,8 @@
  */
 
 import { type Ambiente } from './endpoints'
+import { signXml } from './xml-signer'
+import { sefazSoapRequest } from './mtls-client'
 
 // =============================================
 // TIPOS E CONSTANTES
@@ -32,6 +34,8 @@ export interface ManifestacaoConfig {
   ambiente: Ambiente
   uf: string
   cnpjCpf: string       // CNPJ do destinatário
+  pfx?: string | Buffer // Arquivo PFX para assinatura e mTLS
+  passphrase?: string   // Senha do certificado
   timeout?: number
   maxRetries?: number
 }
@@ -75,14 +79,15 @@ const RETRY_DELAY_MS = 1000
 /**
  * Constrói o envelope SOAP para envio de Manifestação do Destinatário
  * Serviço: NFeRecepcaoEvento4
- * SOAP Action: http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4/nfeRecepcaoEvento
+ * Se o certificado (pfx e senha) for fornecido, assina digitalmente o bloco infEvento via XMLDSig (RSA-SHA1)
  */
 export function buildManifestacaoEnvelope(
   chave: string,
   tipoEvento: TipoManifestacao,
   cnpjDestinatario: string,
   ambiente: string,
-  justificativa?: string
+  justificativa?: string,
+  certOptions?: { pfx: string | Buffer; passphrase?: string }
 ): string {
   const eventoInfo = MANIFESTACAO_EVENTOS[tipoEvento]
   const tpAmb = ambiente === 'PRODUCAO' ? '1' : '2'
@@ -107,8 +112,39 @@ export function buildManifestacaoEnvelope(
   detEventoXml += `
     </detEvento>`
 
-  // ID do evento: ID + tpEvento + chave + nSeqEvento
-  const eventoId = `ID${eventoInfo.codigo}${chave}${nSeqEvento}`
+  // ID do evento: ID + tpEvento + chave + nSeqEvento (com 2 dígitos, ex: 01)
+  const nSeqPadded = nSeqEvento.padStart(2, '0')
+  const eventoId = `ID${eventoInfo.codigo}${chave}${nSeqPadded}`
+
+  // Bloco evento
+  let eventoXml = `<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+          <infEvento Id="${eventoId}">
+            <cOrgao>91</cOrgao>
+            <tpAmb>${tpAmb}</tpAmb>
+            <CNPJ>${escapeXml(cnpjClean)}</CNPJ>
+            <chNFe>${escapeXml(chave)}</chNFe>
+            <dhEvento>${dhEvento}</dhEvento>
+            <tpEvento>${eventoInfo.codigo}</tpEvento>
+            <nSeqEvento>${nSeqEvento}</nSeqEvento>
+            <verEvento>${verEvento}</verEvento>
+            ${detEventoXml}
+          </infEvento>
+        </evento>`
+
+  // Se certificado foi fornecido, assinar o XML digitalmente
+  if (certOptions?.pfx && certOptions.passphrase) {
+    const signResult = signXml({
+      xml: eventoXml,
+      tagToSign: 'infEvento',
+      pfx: certOptions.pfx,
+      passphrase: certOptions.passphrase,
+      algorithm: 'sha1',
+    })
+
+    if (signResult.success) {
+      eventoXml = signResult.signedXml
+    }
+  }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"
@@ -124,19 +160,7 @@ export function buildManifestacaoEnvelope(
     <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
       <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
         <idLote>${generateLoteId()}</idLote>
-        <evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
-          <infEvento Id="${eventoId}">
-            <cOrgao>91</cOrgao>
-            <tpAmb>${tpAmb}</tpAmb>
-            <CNPJ>${cnpjClean}</CNPJ>
-            <chNFe>${chave}</chNFe>
-            <dhEvento>${dhEvento}</dhEvento>
-            <tpEvento>${eventoInfo.codigo}</tpEvento>
-            <nSeqEvento>${nSeqEvento}</nSeqEvento>
-            <verEvento>${verEvento}</verEvento>
-            ${detEventoXml}
-          </infEvento>
-        </evento>
+        ${eventoXml}
       </envEvento>
     </nfeDadosMsg>
   </soap12:Body>
@@ -303,13 +327,14 @@ export async function enviarManifestacao(
   // Obter endpoint
   const endpoint = RECEPCAO_EVENTO_ENDPOINTS[config.ambiente]
 
-  // Construir envelope SOAP
+  // Construir envelope SOAP (com assinatura se certificado fornecido)
   const soapEnvelope = buildManifestacaoEnvelope(
     chaveClean,
     tipoEvento,
     config.cnpjCpf,
     config.ambiente,
-    justificativa
+    justificativa,
+    config.pfx ? { pfx: config.pfx, passphrase: config.passphrase } : undefined
   )
 
   let lastError: string | null = null
@@ -317,20 +342,14 @@ export async function enviarManifestacao(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/soap+xml; charset=utf-8',
-          'SOAPAction': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4/nfeRecepcaoEvento',
-        },
+      const response = await sefazSoapRequest({
+        url: endpoint,
         body: soapEnvelope,
-        signal: controller.signal,
+        soapAction: 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4/nfeRecepcaoEvento',
+        pfx: config.pfx,
+        passphrase: config.passphrase,
+        timeoutMs: timeout,
       })
-
-      clearTimeout(timeoutId)
 
       if (!response.ok) {
         lastError = `HTTP ${response.status}: ${response.statusText}`
@@ -347,7 +366,7 @@ export async function enviarManifestacao(
         break
       }
 
-      const responseBody = await response.text()
+      const responseBody = response.body
       const result = parseManifestacaoResponse(responseBody)
       const tempoResposta = Date.now() - startTime
 

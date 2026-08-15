@@ -67,8 +67,12 @@ export function LoginModule() {
       setRegError('Preencha todos os campos obrigatórios')
       return
     }
-    if (regPassword.length < 6) {
-      setRegError('A senha deve ter pelo menos 6 caracteres')
+    if (regPassword.length < 8) {
+      setRegError('A senha deve ter pelo menos 8 caracteres')
+      return
+    }
+    if (!/[A-Z]/.test(regPassword) || !/[a-z]/.test(regPassword) || !/[0-9]/.test(regPassword) || !/[!@#$%^&*()_+\-=[\]{}|;:\'",.<>?/`~]/.test(regPassword)) {
+      setRegError('A senha deve conter ao menos uma maiúscula, minúscula, número e caractere especial (ex: Senha@123)')
       return
     }
     // Validate CNPJ
@@ -79,7 +83,7 @@ export function LoginModule() {
     }
     setRegLoading(true)
     try {
-      const success = await register({
+      const res = await register({
         name: regName,
         email: regEmail,
         password: regPassword,
@@ -87,8 +91,8 @@ export function LoginModule() {
         cnpj: regCnpj,
         officeEmail: regOfficeEmail,
       })
-      if (!success) {
-        setRegError('Erro ao criar conta. Verifique os dados e tente novamente.')
+      if (!res.success) {
+        setRegError(res.error || 'Erro ao criar conta. Verifique os dados e tente novamente.')
       }
     } catch {
       setRegError('Erro ao criar conta. Tente novamente.')
@@ -259,13 +263,16 @@ export function LoginModule() {
                       <Input
                         id="reg-password"
                         type="password"
-                        placeholder="Mín. 6 caracteres"
+                        placeholder="Mín. 8 chars (ex: Senha@123)"
                         value={regPassword}
                         onChange={(e) => setRegPassword(e.target.value)}
                         className="h-10 border-zinc-200 focus-visible:border-emerald-500 focus-visible:ring-emerald-500/20"
                         disabled={regLoading}
                         autoComplete="new-password"
                       />
+                      <p className="text-[11px] text-zinc-400">
+                        Requer maiúscula, minúscula, número e símbolo (ex: !@#$).
+                      </p>
                     </div>
                   </div>
 

@@ -3,7 +3,7 @@ cd /home/z/my-project
 export NODE_OPTIONS="--max-old-space-size=256"
 
 # Start dev server in background
-npx next dev --turbopack --port 3000 --hostname 0.0.0.0 &
+NODE_ENV=production node .next/standalone/server.js &
 SERVER_PID=$!
 echo "Server PID: $SERVER_PID"
 

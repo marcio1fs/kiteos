@@ -138,17 +138,34 @@ export function DashboardModule() {
   const [financialData, setFinancialData] = useState<FinancialDashboard | null>(null)
   const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([])
   const [subscription, setSubscription] = useState<Subscription | null>(null)
+  const [sellerSales, setSellerSales] = useState<{ sellerId: string; sellerName: string; totalSales: number; totalAmount: number }[]>([])
 
   const fetchDashboard = useCallback(async () => {
     if (!office?.id) return
     setLoading(true)
     try {
-      const [osRes, financialRes, alertsRes, subsRes] = await Promise.all([
+      const [osRes, financialRes, alertsRes, subsRes, salesRes] = await Promise.all([
         apiFetch(`/api/service-orders?officeId=${office.id}`).catch(() => ({ success: false, data: [] })),
         apiFetch(`/api/financial/dashboard?officeId=${office.id}`).catch(() => ({ success: false, data: null })),
         apiFetch(`/api/stock-alerts?officeId=${office.id}`).catch(() => ({ success: false, data: { alerts: [], total: 0 } })),
         apiFetch(`/api/subscriptions?officeId=${office.id}`).catch(() => ({ success: false, data: [] })),
+        apiFetch(`/api/sales?officeId=${office.id}&limit=100`).catch(() => ({ success: false, data: [] })),
       ])
+
+      // Process sales per seller
+      if (salesRes.success && Array.isArray(salesRes.data)) {
+        const sellerMap: Record<string, { sellerId: string; sellerName: string; totalSales: number; totalAmount: number }> = {}
+        for (const s of salesRes.data) {
+          const name = s.user?.name || 'Vendedor Balcão'
+          const id = s.userId || 'default'
+          if (!sellerMap[id]) {
+            sellerMap[id] = { sellerId: id, sellerName: name, totalSales: 0, totalAmount: 0 }
+          }
+          sellerMap[id].totalSales += 1
+          sellerMap[id].totalAmount += Number(s.totalAmount || 0)
+        }
+        setSellerSales(Object.values(sellerMap))
+      }
 
       // Process service orders
       if (osRes.success && Array.isArray(osRes.data)) {
@@ -328,7 +345,7 @@ export function DashboardModule() {
       iconColor: 'text-sky-600',
       badgeBg: 'bg-sky-100 text-sky-700',
       format: (v: string | number) => String(v),
-      subtitle: subscription ? `R$ ${subscription.monthlyPrice.toFixed(2)}/mês` : 'Plano atual',
+      subtitle: subscription && subscription.monthlyPrice != null ? `R$ ${Number(subscription.monthlyPrice).toFixed(2)}/mês` : 'Plano atual',
     },
   ]
 
@@ -748,6 +765,43 @@ export function DashboardModule() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Sellers Performance Section */}
+        {sellerSales.length > 0 && (
+          <Card className="border-zinc-200/60 mt-4">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-semibold text-zinc-900">
+                    Desempenho dos Vendedores (PDV)
+                  </CardTitle>
+                  <CardDescription className="text-xs text-zinc-400">
+                    Vendas efetuadas por cada operador de terminal
+                  </CardDescription>
+                </div>
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                  {sellerSales.length} operador(es)
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {sellerSales.map((seller) => (
+                  <div key={seller.sellerId} className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80 flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-zinc-900 text-sm">{seller.sellerName}</p>
+                      <p className="text-xs text-zinc-500">{seller.totalSales} venda(s) realizada(s)</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-emerald-700 text-sm">{formatCurrency(seller.totalAmount)}</p>
+                      <p className="text-[10px] text-zinc-400">Total Faturado</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Financial Summary */}
         <Card className="border-zinc-200/60">

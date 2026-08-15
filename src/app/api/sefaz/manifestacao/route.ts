@@ -5,6 +5,7 @@
  * Body: { officeId, chave, tipoEvento, justificativa? }
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
@@ -17,6 +18,7 @@ import {
   type TipoManifestacao,
   type ManifestacaoResult,
 } from '@/lib/sefaz/manifestacao'
+import { decryptFileContent, decryptPassword } from '@/lib/sefaz/certificate'
 import type { Ambiente } from '@/lib/sefaz/endpoints'
 
 export async function POST(request: NextRequest) {
@@ -172,7 +174,19 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Enviar manifestação para SEFAZ
+    // Descriptografar certificado para assinatura digital XMLDSig e mTLS
+    let pfx: string | undefined
+    let passphrase: string | undefined
+    try {
+      if (certificado.arquivoContent && certificado.senhaCriptografada) {
+        pfx = decryptFileContent(certificado.arquivoContent)
+        passphrase = decryptPassword(certificado.senhaCriptografada)
+      }
+    } catch (decErr) {
+      logger.error('Erro ao descriptografar certificado para manifestação:', { error: decErr instanceof Error ? decErr.message : String(decErr) })
+    }
+
+    // Enviar manifestação para SEFAZ (com XML assinado digitalmente e mTLS)
     const result: ManifestacaoResult = await enviarManifestacao(
       chave.replace(/\D/g, ''),
       tipoEvento as TipoManifestacao,
@@ -180,6 +194,8 @@ export async function POST(request: NextRequest) {
         ambiente: certificado.ambiente as Ambiente,
         uf: certificado.uf,
         cnpjCpf,
+        pfx,
+        passphrase,
       },
       tipoEvento === 'OPERACAO_NAO_REALIZADA' ? justificativa : undefined
     )
@@ -258,7 +274,7 @@ export async function POST(request: NextRequest) {
       status: isSuccessful ? 200 : 422,
     })
   } catch (error) {
-    console.error('Erro ao enviar manifestação do destinatário:', error)
+    logger.error('Erro ao enviar manifestação do destinatário:', { error: error instanceof Error ? error.message : String(error) })
     return NextResponse.json(
       {
         success: false,

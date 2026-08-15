@@ -6,6 +6,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/__tests__/**/*.test.ts'],
+    // AUD-05 FIX: Run global setup to ensure Prisma Client is generated before tests
+    globalSetup: './vitest.setup.ts',
   },
   resolve: {
     alias: {

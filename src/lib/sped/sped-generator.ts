@@ -314,19 +314,18 @@ async function generateBloco0(
       bloco: '0',
       linha: buildLine([
         '0150',
-        part.codigo,
-        part.nome,
-        isCnpj ? '00' : '01', // COD_PAIS: 00=CNPJ, 01=CPF
-        part.cnpj,
-        part.ie,
-        part.uf,
-        part.cep,
-        part.endereco,
-        part.numero,
-        part.complemento,
-        part.bairro,
-        part.fone,
-        part.pais,
+        part.codigo,                  // 2 - COD_PART
+        part.nome,                    // 3 - NOME
+        '01058',                      // 4 - COD_PAIS (01058 = Brasil no BACEN)
+        isCnpj ? part.cnpj : '',      // 5 - CNPJ
+        !isCnpj ? part.cnpj : '',     // 6 - CPF
+        part.ie,                      // 7 - IE
+        '',                           // 8 - COD_MUN (IBGE)
+        '',                           // 9 - SUFRAMA
+        part.endereco,                // 10 - END
+        part.numero,                  // 11 - NUM
+        part.complemento,             // 12 - COMPL
+        part.bairro,                  // 13 - BAIRRO
       ]),
       ordem: ordem++,
     })

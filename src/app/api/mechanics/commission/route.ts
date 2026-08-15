@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { Prisma } from '@prisma/client'
@@ -124,7 +125,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error getting commission report:', error)
+    logger.error('Error getting commission report:', { error: error instanceof Error ? error.message : String(error) })
     return NextResponse.json({ success: false, error: 'Erro ao gerar relatório de comissões' }, { status: 500 })
   }
 }

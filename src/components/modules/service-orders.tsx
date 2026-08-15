@@ -66,6 +66,7 @@ interface ClientSimple {
   name: string
   cpfCnpj?: string | null
   phone?: string | null
+  vehicles?: VehicleSimple[]
 }
 
 interface VehicleSimple {
@@ -120,8 +121,8 @@ interface ServiceOrder {
   paidAt?: string | null
   clientId: string
   vehicleId: string
-  client: { id: string; name: string; phone?: string | null; email?: string | null }
-  vehicle: VehicleSimple
+  client?: { id: string; name: string; phone?: string | null; email?: string | null } | null
+  vehicle?: VehicleSimple | null
   items: ServiceOrderItem[]
   createdAt: string
   updatedAt: string
@@ -150,8 +151,9 @@ function StatusBadge({ status }: { status: OSStatus }) {
   )
 }
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+function formatCurrency(value: number | string | null | undefined) {
+  const num = typeof value === 'number' ? value : Number(value || 0)
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(isNaN(num) ? 0 : num)
 }
 
 function formatDate(dateStr: string) {
@@ -214,6 +216,307 @@ function StatusTimeline({ status }: { status: OSStatus }) {
 }
 
 // =============================================
+// QUICK ADD CLIENT DIALOG
+// =============================================
+function QuickAddClientDialog({
+  open,
+  onClose,
+  onClientCreated,
+  officeId,
+}: {
+  open: boolean
+  onClose: () => void
+  onClientCreated: (client: ClientSimple, vehicle?: VehicleSimple) => void
+  officeId: string
+}) {
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [cpfCnpj, setCpfCnpj] = useState('')
+  const [plate, setPlate] = useState('')
+  const [brand, setBrand] = useState('')
+  const [model, setModel] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      alert('Nome do cliente é obrigatório')
+      return
+    }
+    setLoading(true)
+    try {
+      // 1. Create Client
+      const clientRes = await apiFetch('/api/clients', {
+        method: 'POST',
+        body: JSON.stringify({
+          officeId,
+          name: name.trim(),
+          phone: phone.trim() || undefined,
+          cpfCnpj: cpfCnpj.trim() || undefined,
+        }),
+      })
+
+      if (!clientRes.success || !clientRes.data) {
+        alert(clientRes.error || 'Erro ao cadastrar cliente')
+        return
+      }
+
+      const createdClient: ClientSimple = clientRes.data
+      let createdVehicle: VehicleSimple | undefined = undefined
+
+      // 2. Create Vehicle if plate provided
+      if (plate.trim()) {
+        const vehicleRes = await apiFetch('/api/vehicles', {
+          method: 'POST',
+          body: JSON.stringify({
+            officeId,
+            clientId: createdClient.id,
+            plate: plate.trim().toUpperCase(),
+            brand: brand.trim() || undefined,
+            model: model.trim() || undefined,
+          }),
+        })
+        if (vehicleRes.success && vehicleRes.data) {
+          createdVehicle = vehicleRes.data
+        }
+      }
+
+      onClientCreated(createdClient, createdVehicle)
+      onClose()
+      setName('')
+      setPhone('')
+      setCpfCnpj('')
+      setPlate('')
+      setBrand('')
+      setModel('')
+    } catch {
+      alert('Erro de conexão ao cadastrar cliente')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-emerald-900">
+            <User className="w-5 h-5 text-emerald-600" />
+            Cadastro Rápido de Cliente
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1">
+            <Label className="text-xs font-semibold">Nome Completo *</Label>
+            <Input
+              placeholder="Ex: João da Silva"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Telefone / WhatsApp</Label>
+              <Input
+                placeholder="(11) 99999-9999"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">CPF / CNPJ</Label>
+              <Input
+                placeholder="000.000.000-00"
+                value={cpfCnpj}
+                onChange={(e) => setCpfCnpj(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-zinc-100">
+            <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider block mb-2">
+              Veículo do Cliente (Opcional)
+            </span>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px]">Placa</Label>
+                <Input
+                  placeholder="ABC-1234"
+                  value={plate}
+                  onChange={(e) => setPlate(e.target.value.toUpperCase())}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Marca</Label>
+                <Input
+                  placeholder="Ex: Fiat"
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px]">Modelo</Label>
+                <Input
+                  placeholder="Ex: Uno"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} type="button">
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={loading || !name.trim()}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            Salvar e Selecionar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// =============================================
+// QUICK ADD VEHICLE DIALOG
+// =============================================
+function QuickAddVehicleDialog({
+  open,
+  onClose,
+  clientId,
+  officeId,
+  onVehicleCreated,
+}: {
+  open: boolean
+  onClose: () => void
+  clientId: string
+  officeId: string
+  onVehicleCreated: (vehicle: VehicleSimple) => void
+}) {
+  const [plate, setPlate] = useState('')
+  const [brand, setBrand] = useState('')
+  const [model, setModel] = useState('')
+  const [year, setYear] = useState<string>('')
+  const [color, setColor] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSave = async () => {
+    if (!plate.trim() || !clientId) return
+    setLoading(true)
+    try {
+      const res = await apiFetch('/api/vehicles', {
+        method: 'POST',
+        body: JSON.stringify({
+          officeId,
+          clientId,
+          plate: plate.trim().toUpperCase(),
+          brand: brand.trim() || undefined,
+          model: model.trim() || undefined,
+          year: year ? parseInt(year, 10) : undefined,
+          color: color.trim() || undefined,
+        }),
+      })
+
+      if (res.success && res.data) {
+        onVehicleCreated(res.data)
+        onClose()
+        setPlate('')
+        setBrand('')
+        setModel('')
+        setYear('')
+        setColor('')
+      } else {
+        alert(res.error || 'Erro ao cadastrar veículo')
+      }
+    } catch {
+      alert('Erro de conexão ao cadastrar veículo')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Package className="w-5 h-5 text-blue-600" />
+            Cadastrar Novo Veículo
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-1">
+            <Label className="text-xs font-semibold">Placa do Veículo *</Label>
+            <Input
+              placeholder="Ex: ABC-1234 ou MERCOSUL"
+              value={plate}
+              onChange={(e) => setPlate(e.target.value.toUpperCase())}
+              autoFocus
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Marca</Label>
+              <Input
+                placeholder="Ex: Volkswagen"
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Modelo</Label>
+              <Input
+                placeholder="Ex: Gol 1.0"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Ano</Label>
+              <Input
+                type="number"
+                placeholder="Ex: 2020"
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Cor</Label>
+              <Input
+                placeholder="Ex: Prata"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} type="button">
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={loading || !plate.trim()}
+            className="bg-blue-600 hover:bg-blue-700 text-white gap-1"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            Salvar Veículo
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// =============================================
 // NEW/EDIT OS DIALOG
 // =============================================
 function OSFormDialog({
@@ -237,6 +540,9 @@ function OSFormDialog({
   const [loading, setLoading] = useState(false)
   const [clientsLoading, setClientsLoading] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
+  const [showClientDropdown, setShowClientDropdown] = useState(false)
+  const [showQuickAddClient, setShowQuickAddClient] = useState(false)
+  const [showQuickAddVehicle, setShowQuickAddVehicle] = useState(false)
 
   const [selectedClientId, setSelectedClientId] = useState('')
   const [selectedVehicleId, setSelectedVehicleId] = useState('')
@@ -302,7 +608,12 @@ function OSFormDialog({
     const fetchVehicles = async () => {
       try {
         const res = await apiFetch(`/api/vehicles?officeId=${officeId}&clientId=${selectedClientId}`)
-        if (res.success) setVehicles(res.data)
+        if (res.success && Array.isArray(res.data)) {
+          setVehicles(res.data)
+          if (res.data.length === 1 && !selectedVehicleId) {
+            setSelectedVehicleId(res.data[0].id)
+          }
+        }
       } catch (err) {
         console.error('Error fetching vehicles:', err)
       }
@@ -462,7 +773,7 @@ function OSFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] lg:max-w-6xl xl:max-w-7xl max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold text-zinc-900">
             {editingOS ? `Editar OS ${editingOS.number}` : 'Nova Ordem de Serviço'}
@@ -470,43 +781,176 @@ function OSFormDialog({
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Client & Vehicle */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-zinc-700">Cliente *</Label>
-              <Input
-                placeholder="Buscar cliente..."
-                value={clientSearch}
-                onChange={(e) => setClientSearch(e.target.value)}
-                className="mb-1"
-              />
-              <Select value={selectedClientId} onValueChange={(v) => { setSelectedClientId(v); setSelectedVehicleId('') }}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={clientsLoading ? 'Carregando...' : 'Selecione o cliente'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {filteredClients.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}{c.cpfCnpj ? ` - ${c.cpfCnpj}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Client & Vehicle Selection */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-zinc-50/70 p-4 rounded-xl border border-zinc-200/80">
+            {/* Client Column */}
+            <div className="space-y-2 relative">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold text-zinc-900 flex items-center gap-1.5">
+                  <User className="w-4 h-4 text-emerald-600" /> Cliente *
+                </Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowQuickAddClient(true)}
+                  className="h-7 text-xs gap-1 text-emerald-700 border-emerald-200 bg-white hover:bg-emerald-50"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Novo Cliente
+                </Button>
+              </div>
+
+              {selectedClientId ? (
+                // Selected Client Card
+                (() => {
+                  const currentClient = clients.find((c) => c.id === selectedClientId)
+                  return (
+                    <div className="p-3 bg-white rounded-lg border border-emerald-200 shadow-sm flex items-center justify-between">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center shrink-0">
+                          {currentClient?.name ? currentClient.name.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-zinc-900 text-sm truncate">{currentClient?.name || 'Cliente Selecionado'}</p>
+                          <div className="flex items-center gap-2 text-xs text-zinc-500 flex-wrap">
+                            {currentClient?.phone && (
+                              <a
+                                href={`https://wa.me/55${currentClient.phone.replace(/\D/g, '')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-emerald-600 hover:underline flex items-center gap-1 font-medium"
+                              >
+                                <MessageCircle className="w-3 h-3" /> {currentClient.phone}
+                              </a>
+                            )}
+                            {currentClient?.cpfCnpj && <span>• CPF/CNPJ: {currentClient.cpfCnpj}</span>}
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => { setSelectedClientId(''); setSelectedVehicleId(''); setClientSearch('') }}
+                        className="h-7 text-xs text-zinc-400 hover:text-red-600 shrink-0"
+                      >
+                        Trocar
+                      </Button>
+                    </div>
+                  )
+                })()
+              ) : (
+                // Client Search Input & Combobox Dropdown
+                <div className="relative">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <Input
+                      placeholder="Buscar por Nome, CPF/CNPJ, Telefone..."
+                      value={clientSearch}
+                      onChange={(e) => { setClientSearch(e.target.value); setShowClientDropdown(true) }}
+                      onFocus={() => setShowClientDropdown(true)}
+                      className="pl-9 bg-white"
+                    />
+                  </div>
+
+                  {/* Dropdown list */}
+                  {showClientDropdown && (
+                    <div className="absolute z-20 left-0 right-0 top-full mt-1 max-h-60 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-xl">
+                      {clientsLoading ? (
+                        <div className="p-4 text-center text-xs text-zinc-500 flex items-center justify-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> Carregando clientes...
+                        </div>
+                      ) : filteredClients.length === 0 ? (
+                        <div className="p-4 text-center">
+                          <p className="text-xs text-zinc-500 mb-2">Nenhum cliente encontrado para &quot;{clientSearch}&quot;</p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => { setShowClientDropdown(false); setShowQuickAddClient(true) }}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Cadastrar &quot;{clientSearch}&quot;
+                          </Button>
+                        </div>
+                      ) : (
+                        filteredClients.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedClientId(c.id)
+                              setSelectedVehicleId('')
+                              setShowClientDropdown(false)
+                            }}
+                            className="w-full flex items-center justify-between p-2.5 hover:bg-emerald-50/80 border-b border-zinc-100 last:border-0 text-left transition-colors"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-medium text-zinc-900 text-sm truncate">{c.name}</p>
+                              <p className="text-xs text-zinc-500">
+                                {c.phone ? `Tel: ${c.phone}` : ''} {c.cpfCnpj ? `· ${c.cpfCnpj}` : ''}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="text-[10px] bg-zinc-50 shrink-0">
+                              {c.vehicles?.length ? `${c.vehicles.length} veículo(s)` : 'Sem veículos'}
+                            </Badge>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Vehicle Column */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-zinc-700">Veículo *</Label>
-              <Select value={selectedVehicleId} onValueChange={setSelectedVehicleId} disabled={!selectedClientId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={selectedClientId ? 'Selecione o veículo' : 'Selecione o cliente primeiro'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {vehicles.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>
-                      {v.plate} - {v.brand || ''} {v.model || ''} {v.year || ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold text-zinc-900 flex items-center gap-1.5">
+                  <Package className="w-4 h-4 text-blue-600" /> Veículo *
+                </Label>
+                {selectedClientId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowQuickAddVehicle(true)}
+                    className="h-7 text-xs gap-1 text-blue-700 border-blue-200 bg-white hover:bg-blue-50"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Adicionar Veículo
+                  </Button>
+                )}
+              </div>
+
+              {!selectedClientId ? (
+                <div className="p-3 bg-zinc-100 rounded-lg border border-dashed border-zinc-300 text-xs text-zinc-400 text-center">
+                  Selecione o cliente primeiro para visualizar os veículos
+                </div>
+              ) : vehicles.length === 0 ? (
+                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-xs text-amber-800 flex items-center justify-between">
+                  <span>Este cliente não possui veículos cadastrados.</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setShowQuickAddVehicle(true)}
+                    className="h-7 bg-amber-600 hover:bg-amber-700 text-white text-xs gap-1"
+                  >
+                    <Plus className="w-3 h-3" /> Cadastrar
+                  </Button>
+                </div>
+              ) : (
+                <Select value={selectedVehicleId} onValueChange={setSelectedVehicleId}>
+                  <SelectTrigger className="w-full bg-white h-11">
+                    <SelectValue placeholder="Selecione o veículo do cliente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {vehicles.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        <span className="font-mono font-bold text-zinc-900">{v.plate}</span> — {v.brand || ''} {v.model || ''} {v.year ? `(${v.year})` : ''} {v.color ? `· ${v.color}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
 
@@ -857,6 +1301,31 @@ function OSFormDialog({
             {editingOS ? 'Salvar Alterações' : 'Criar OS'}
           </Button>
         </DialogFooter>
+
+        <QuickAddClientDialog
+          open={showQuickAddClient}
+          onClose={() => setShowQuickAddClient(false)}
+          officeId={officeId}
+          onClientCreated={(newClient, newVehicle) => {
+            setClients((prev) => [newClient, ...prev])
+            setSelectedClientId(newClient.id)
+            if (newVehicle) {
+              setVehicles([newVehicle])
+              setSelectedVehicleId(newVehicle.id)
+            }
+          }}
+        />
+
+        <QuickAddVehicleDialog
+          open={showQuickAddVehicle}
+          onClose={() => setShowQuickAddVehicle(false)}
+          clientId={selectedClientId}
+          officeId={officeId}
+          onVehicleCreated={(newVehicle) => {
+            setVehicles((prev) => [newVehicle, ...prev])
+            setSelectedVehicleId(newVehicle.id)
+          }}
+        />
       </DialogContent>
     </Dialog>
   )
@@ -979,7 +1448,7 @@ function OSDetail({
         }),
       })
       if (res.success) {
-        const phone = res.data?.phone || os.client.phone || ''
+        const phone = res.data?.phone || os.client?.phone || ''
         setWaMessage({
           type: 'success',
           text: `${mode === 'estimate' ? 'Orçamento' : 'Recibo'} enviado via WhatsApp para ${phone}`,
@@ -1100,9 +1569,9 @@ function OSDetail({
             <CardTitle className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Cliente</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1">
-            <p className="font-semibold text-zinc-900">{os.client.name}</p>
-            {os.client.phone && <p className="text-sm text-zinc-600">Tel: {os.client.phone}</p>}
-            {os.client.email && <p className="text-sm text-zinc-600">{os.client.email}</p>}
+            <p className="font-semibold text-zinc-900">{os.client?.name || 'Cliente não informado'}</p>
+            {os.client?.phone && <p className="text-sm text-zinc-600">Tel: {os.client.phone}</p>}
+            {os.client?.email && <p className="text-sm text-zinc-600">{os.client.email}</p>}
           </CardContent>
         </Card>
         <Card>
@@ -1437,8 +1906,8 @@ function OSDetail({
 // MAIN COMPONENT
 // =============================================
 export function ServiceOrdersModule() {
-  const { user } = useAuthStore()
-  const officeId = user?.officeId || ''
+  const { user, office } = useAuthStore()
+  const officeId = user?.officeId || office?.id || ''
 
   const [orders, setOrders] = useState<ServiceOrder[]>([])
   const [loading, setLoading] = useState(true)
@@ -1453,7 +1922,10 @@ export function ServiceOrdersModule() {
   const [formOpen, setFormOpen] = useState(false)
 
   const fetchOrders = useCallback(async () => {
-    if (!officeId) return
+    if (!officeId) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
       const params = new URLSearchParams({ officeId })
@@ -1463,13 +1935,16 @@ export function ServiceOrdersModule() {
       params.set('limit', String(limit))
 
       const res = await apiFetch(`/api/service-orders?${params.toString()}`)
-      if (res.success) {
+      if (res && res.success && Array.isArray(res.data)) {
         setOrders(res.data)
         const total = res.data.length
         setTotalPages(Math.max(1, Math.ceil(total / limit)))
+      } else {
+        setOrders([])
       }
     } catch (err) {
       console.error('Error fetching service orders:', err)
+      setOrders([])
     } finally {
       setLoading(false)
     }
@@ -1605,7 +2080,7 @@ export function ServiceOrdersModule() {
                         onClick={() => setSelectedOS(os)}
                       >
                         <TableCell className="font-medium text-zinc-900">{os.number}</TableCell>
-                        <TableCell>{os.client.name}</TableCell>
+                        <TableCell>{os.client?.name || '—'}</TableCell>
                         <TableCell>
                           <span className="font-medium">{os.vehicle?.plate || '—'}</span>
                           <span className="text-zinc-500 ml-1">
@@ -1637,7 +2112,7 @@ export function ServiceOrdersModule() {
                       <span className="font-semibold text-zinc-900">{os.number}</span>
                       <StatusBadge status={os.status as OSStatus} />
                     </div>
-                    <p className="text-sm text-zinc-700">{os.client.name}</p>
+                    <p className="text-sm text-zinc-700">{os.client?.name || '—'}</p>
                     <p className="text-xs text-zinc-500">
                       {os.vehicle ? `${os.vehicle.plate} - ${os.vehicle.brand || ''} ${os.vehicle.model || ''}` : '—'}
                     </p>

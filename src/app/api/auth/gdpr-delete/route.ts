@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { requireAuth, revokeAllUserTokens, addToTokenBlacklist, auditLog } from '@/lib/auth';
 
 /**
@@ -181,7 +182,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('GDPR deletion error:', error);
+    logger.error('GDPR deletion error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao processar solicitação de exclusão de dados' },
       { status: 500 }

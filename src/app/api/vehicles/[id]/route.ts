@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth, auditLog } from '@/lib/auth';
 
@@ -40,7 +41,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: vehicle });
   } catch (error) {
-    console.error('Get vehicle error:', error);
+    logger.error('Get vehicle error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }
@@ -129,7 +130,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: vehicle });
   } catch (error) {
-    console.error('Update vehicle error:', error);
+    logger.error('Update vehicle error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }
@@ -172,7 +173,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, data: { message: 'Veículo removido com sucesso' } });
   } catch (error) {
-    console.error('Delete vehicle error:', error);
+    logger.error('Delete vehicle error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }

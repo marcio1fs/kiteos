@@ -30,7 +30,7 @@ interface AuthState {
   token: string | null
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<boolean>
-  register: (data: RegisterData) => Promise<boolean>
+  register: (data: RegisterData) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   checkAuth: () => Promise<void>
 }
@@ -59,8 +59,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       })
       const data = await res.json()
       if (data.success) {
-        const { token, user, office } = data.data
-        localStorage.setItem('kiteos_token', token)
+        const { token, refreshToken, user, office } = data.data
+        if (token) localStorage.setItem('kiteos_token', token)
+        if (refreshToken) localStorage.setItem('kiteos_refresh', refreshToken)
         localStorage.setItem('kiteos_user', JSON.stringify(user))
         localStorage.setItem('kiteos_office', JSON.stringify(office))
         set({ user, office, token, isAuthenticated: true })
@@ -88,72 +89,97 @@ export const useAuthStore = create<AuthState>((set) => ({
       })
       const result = await res.json()
       if (result.success) {
-        const { token, user, office } = result.data
-        localStorage.setItem('kiteos_token', token)
+        const { token, refreshToken, user, office } = result.data
+        if (token) localStorage.setItem('kiteos_token', token)
+        if (refreshToken) localStorage.setItem('kiteos_refresh', refreshToken)
         localStorage.setItem('kiteos_user', JSON.stringify(user))
         localStorage.setItem('kiteos_office', JSON.stringify(office))
         set({ user, office, token, isAuthenticated: true })
-        return true
+        return { success: true }
       }
-      return false
+      return { success: false, error: result.error || 'Erro ao criar conta' }
     } catch {
-      return false
+      return { success: false, error: 'Erro de conexão com o servidor' }
     }
   },
 
-  logout: () => {
+  logout: async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch {}
     localStorage.removeItem('kiteos_token')
+    localStorage.removeItem('kiteos_refresh')
     localStorage.removeItem('kiteos_user')
     localStorage.removeItem('kiteos_office')
     set({ user: null, office: null, token: null, isAuthenticated: false })
   },
 
   checkAuth: async () => {
-    const token = localStorage.getItem('kiteos_token')
     const userStr = localStorage.getItem('kiteos_user')
     const officeStr = localStorage.getItem('kiteos_office')
-    if (!token || !userStr || !officeStr) {
+    const localToken = localStorage.getItem('kiteos_token')
+
+    if (!userStr || !officeStr || !localToken) {
+      localStorage.removeItem('kiteos_token')
+      localStorage.removeItem('kiteos_refresh')
+      localStorage.removeItem('kiteos_user')
+      localStorage.removeItem('kiteos_office')
       set({ user: null, office: null, token: null, isAuthenticated: false })
       return
     }
 
     try {
-      // Verify token server-side to ensure it's still valid
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${localToken}`
+      }
       const res = await fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${token}` },
+        headers,
+        credentials: 'same-origin',
       })
       const data = await res.json()
 
       if (data.success && data.data?.user) {
         const user = data.data.user
         const office = data.data.office
-        // Update stored data with fresh server data
         localStorage.setItem('kiteos_user', JSON.stringify(user))
         localStorage.setItem('kiteos_office', JSON.stringify(office))
-        set({ token, user, office, isAuthenticated: true })
+        set({ token: localToken, user, office, isAuthenticated: true })
       } else {
-        // Token is invalid or expired - clear everything
+        // Try refresh token before clearing session
+        const newToken = await performTokenRefresh()
+        if (newToken) {
+          // Re-validate with fresh token to get correct user/office data
+          try {
+            const meRes = await fetch('/api/auth/me', {
+              headers: { 'Authorization': `Bearer ${newToken}` },
+              credentials: 'same-origin',
+            })
+            const meData = await meRes.json()
+            if (meData.success && meData.data?.user) {
+              const user = meData.data.user
+              const office = meData.data.office
+              localStorage.setItem('kiteos_user', JSON.stringify(user))
+              localStorage.setItem('kiteos_office', JSON.stringify(office))
+              set({ token: newToken, user, office, isAuthenticated: true })
+              return
+            }
+          } catch {}
+          // If re-validation failed, clear everything
+        }
+        // Token and refresh failed — clear state and show login
         localStorage.removeItem('kiteos_token')
+        localStorage.removeItem('kiteos_refresh')
         localStorage.removeItem('kiteos_user')
         localStorage.removeItem('kiteos_office')
         set({ user: null, office: null, token: null, isAuthenticated: false })
       }
     } catch {
-      // Network error - trust localStorage but mark as authenticated
-      // The middleware will handle invalid tokens on next API call
-      try {
-        set({
-          token,
-          user: JSON.parse(userStr),
-          office: JSON.parse(officeStr),
-          isAuthenticated: true,
-        })
-      } catch {
-        localStorage.removeItem('kiteos_token')
-        localStorage.removeItem('kiteos_user')
-        localStorage.removeItem('kiteos_office')
-        set({ user: null, office: null, token: null, isAuthenticated: false })
-      }
+      // On connection error, reset state safely
+      localStorage.removeItem('kiteos_token')
+      localStorage.removeItem('kiteos_refresh')
+      localStorage.removeItem('kiteos_user')
+      localStorage.removeItem('kiteos_office')
+      set({ user: null, office: null, token: null, isAuthenticated: false })
     }
   },
 }))
@@ -176,6 +202,7 @@ export type NavPage =
   | 'clients'
   | 'suppliers'
   | 'mechanics'
+  | 'employees'
   | 'office-profile'
 
 interface NavState {
@@ -189,26 +216,105 @@ export const useNavStore = create<NavState>((set) => ({
 }))
 
 // =============================================
+// CONCURRENT TOKEN REFRESH PIPELINE
+// =============================================
+let refreshTokenPromise: Promise<string | null> | null = null
+
+async function performTokenRefresh(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  if (refreshTokenPromise) return refreshTokenPromise
+
+  refreshTokenPromise = (async () => {
+    try {
+      const refreshToken = localStorage.getItem('kiteos_refresh')
+      const refreshRes = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: refreshToken || undefined }),
+        credentials: 'same-origin',
+      })
+      const refreshData = await refreshRes.json()
+      if (refreshData.success && refreshData.data?.token) {
+        const newToken = refreshData.data.token
+        localStorage.setItem('kiteos_token', newToken)
+        if (refreshData.data.refreshToken) {
+          localStorage.setItem('kiteos_refresh', refreshData.data.refreshToken)
+        }
+        useAuthStore.setState({ token: newToken })
+        return newToken
+      }
+      return null
+    } catch {
+      return null
+    } finally {
+      refreshTokenPromise = null
+    }
+  })()
+
+  return refreshTokenPromise
+}
+
+// =============================================
 // API HELPER
 // =============================================
 export async function apiFetch(path: string, options?: RequestInit) {
-  const token = localStorage.getItem('kiteos_token')
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string> || {}),
   }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
+  
+  if (!headers['Authorization'] && typeof window !== 'undefined') {
+    const token = localStorage.getItem('kiteos_token') || useAuthStore.getState().token
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
   }
+
   try {
-    const res = await fetch(path, { ...options, headers })
-    const data = await res.json()
-    // If token expired, redirect to login
-    if (res.status === 401 && typeof window !== 'undefined') {
+    let res = await fetch(path, { 
+      ...options, 
+      headers,
+      credentials: 'same-origin' 
+    })
+
+    // If 401 Unauthorized, trigger single-flight token refresh across all parallel requests
+    if (res.status === 401 && typeof window !== 'undefined' && !path.includes('/api/auth/')) {
+      const newToken = await performTokenRefresh()
+      if (newToken) {
+        headers['Authorization'] = `Bearer ${newToken}`
+        // Retry original request with newly issued token
+        res = await fetch(path, {
+          ...options,
+          headers,
+          credentials: 'same-origin',
+        })
+      }
+    }
+
+    const contentType = res.headers.get('content-type') || ''
+    let data: any
+    if (contentType.includes('application/json')) {
+      try {
+        data = await res.json()
+      } catch (jsonErr) {
+        console.warn(`apiFetch JSON parse error from ${path}:`, jsonErr)
+        data = { success: false, error: `Erro ao interpretar dados do servidor (HTTP ${res.status})` }
+      }
+    } else {
+      const htmlText = await res.text().catch(() => '')
+      console.warn(`apiFetch recebeu resposta não-JSON (HTML/Texto) de ${path} (status ${res.status}):`, htmlText.substring(0, 150))
+      data = {
+        success: false,
+        error: `Resposta do servidor em formato inválido (${res.status})`
+      }
+    }
+
+    // If status is still 401 after retry, clear auth state
+    if (res.status === 401 && typeof window !== 'undefined' && !path.includes('/api/auth/')) {
       localStorage.removeItem('kiteos_token')
+      localStorage.removeItem('kiteos_refresh')
       localStorage.removeItem('kiteos_user')
       localStorage.removeItem('kiteos_office')
-      // Use zustand to clear auth state instead of hard reload
       useAuthStore.setState({ user: null, office: null, token: null, isAuthenticated: false })
     }
     return data

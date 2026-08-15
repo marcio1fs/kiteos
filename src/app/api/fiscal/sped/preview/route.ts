@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { applyRateLimit } from '@/lib/sefaz/rate-limiter'
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
       data: result.resumo,
     })
   } catch (error) {
-    console.error('Erro ao gerar preview do SPED Fiscal:', error)
+    logger.error('Erro ao gerar preview do SPED Fiscal:', { error: error instanceof Error ? error.message : String(error) })
     return NextResponse.json(
       {
         success: false,

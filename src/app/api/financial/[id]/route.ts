@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 // GET /api/financial/[id] - Get financial entry by id
 export async function GET(
@@ -83,7 +84,7 @@ export async function GET(
       data: entry,
     });
   } catch (error) {
-    console.error('Error getting financial entry:', error);
+    logger.error('Error getting financial entry:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao buscar entrada financeira' },
       { status: 500 }
@@ -234,7 +235,7 @@ export async function PUT(
       data: entry,
     });
   } catch (error) {
-    console.error('Error updating financial entry:', error);
+    logger.error('Error updating financial entry:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao atualizar entrada financeira' },
       { status: 500 }
@@ -280,7 +281,7 @@ export async function DELETE(
       data: { message: 'Entrada financeira removida com sucesso' },
     });
   } catch (error) {
-    console.error('Error deleting financial entry:', error);
+    logger.error('Error deleting financial entry:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao remover entrada financeira' },
       { status: 500 }

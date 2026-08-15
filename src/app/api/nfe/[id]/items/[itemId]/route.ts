@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
@@ -76,7 +77,7 @@ export async function PATCH(
       data: updatedItem,
     });
   } catch (error) {
-    console.error('Error updating invoice item:', error);
+    logger.error('Error updating invoice item:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao atualizar item da NF-e' },
       { status: 500 }

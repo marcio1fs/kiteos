@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { encryptToken, decryptToken } from '@/lib/token-encryption';
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error getting MP config: [REDACTED]');
+    logger.error('Error getting MP config', { reason: 'REDACTED' });
     return NextResponse.json(
       { success: false, error: 'Erro ao buscar configuração' },
       { status: 500 }
@@ -80,11 +81,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // ============================================================================
-    // SECURITY FIX: Added authentication + OWNER role check
-    // Only OWNER should be able to configure payment gateway credentials
-    // ============================================================================
-    const auth = await requireAuth(request, officeId, 'OWNER');
+    // Only ADMIN should be able to configure payment gateway credentials
+    const auth = await requireAuth(request, officeId, 'ADMIN');
     if (!auth.payload) {
       return NextResponse.json(
         { success: false, error: auth.error.message },
@@ -122,7 +120,7 @@ export async function PUT(request: NextRequest) {
         }
       } catch (e) {
         // SECURITY FIX (#69): Don't log full error which may contain token data
-        console.warn('MP validation error (saving anyway): [REDACTED]');
+        logger.warn('MP validation error (saving anyway)', { reason: 'REDACTED' });
       }
 
       // SECURITY FIX (#79): Encrypt sensitive tokens before storing
@@ -185,7 +183,7 @@ export async function PUT(request: NextRequest) {
       data: { message: 'Configuração atualizada' },
     });
   } catch (error) {
-    console.error('Error updating MP config: [REDACTED]');
+    logger.error('Error updating MP config', { reason: 'REDACTED' });
     return NextResponse.json(
       { success: false, error: 'Erro ao atualizar configuração' },
       { status: 500 }
@@ -206,10 +204,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // ============================================================================
-    // SECURITY FIX: Added authentication + OWNER role check
-    // ============================================================================
-    const auth = await requireAuth(request, officeId, 'OWNER');
+    // Require ADMIN role for deletion
+    const auth = await requireAuth(request, officeId, 'ADMIN');
     if (!auth.payload) {
       return NextResponse.json(
         { success: false, error: auth.error.message },
@@ -235,7 +231,7 @@ export async function DELETE(request: NextRequest) {
       data: { message: 'Integração com Mercado Pago removida' },
     });
   } catch (error) {
-    console.error('Error removing MP config: [REDACTED]');
+    logger.error('Error removing MP config', { reason: 'REDACTED' });
     return NextResponse.json(
       { success: false, error: 'Erro ao remover configuração' },
       { status: 500 }

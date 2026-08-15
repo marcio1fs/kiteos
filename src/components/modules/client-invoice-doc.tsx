@@ -30,6 +30,8 @@ interface ClientInvoiceItem {
 export interface ClientInvoiceData {
   id: string
   number: string
+  chave?: string | null
+  serie?: string | null
   type: string
   status: string
   dataEmissao: string
@@ -244,6 +246,26 @@ function InvoiceDocumentContent({ invoice }: { invoice: ClientInvoiceData }) {
 
       {/* Separator */}
       <div style={{ borderBottom: '2px solid #1a1a2e', marginBottom: '12px' }} />
+
+      {/* ===== CHAVE DE ACESSO ===== */}
+      {invoice.chave && (
+        <div style={{
+          border: '1px solid #d1d5db',
+          background: '#f9fafb',
+          borderRadius: '4px',
+          padding: '6px 12px',
+          marginBottom: '12px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: '11px',
+        }}>
+          <div><strong>CHAVE DE ACESSO:</strong></div>
+          <div style={{ fontFamily: 'monospace', fontWeight: 700, letterSpacing: '1px', fontSize: '12px', color: '#1a1a2e' }}>
+            {invoice.chave.replace(/(\d{4})/g, '$1 ').trim()}
+          </div>
+        </div>
+      )}
 
       {/* ===== DESTINATÁRIO ===== */}
       <div style={{ border: '1px solid #d1d5db', borderRadius: '4px', padding: '10px 12px', marginBottom: '12px', position: 'relative', zIndex: 1 }}>

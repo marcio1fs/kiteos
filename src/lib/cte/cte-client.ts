@@ -6,6 +6,7 @@
 
 import { getUfFromChave, type Ambiente } from '@/lib/sefaz/endpoints'
 import { applyRateLimit } from '@/lib/sefaz/rate-limiter'
+import { sefazSoapRequest } from '@/lib/sefaz/mtls-client'
 
 // AUD-H04 FIX: Import escapeXml from NF-e soap builder for SOAP injection protection
 function escapeXml(str: string): string {
@@ -26,6 +27,8 @@ export interface CteClientConfig {
   ambiente: Ambiente
   uf?: string
   cnpjCpf: string
+  pfx?: string | Buffer
+  passphrase?: string
   timeout?: number
   maxRetries?: number
 }
@@ -785,20 +788,14 @@ export async function consultaCte(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-      const response = await fetch(endpoint.consulta, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/soap+xml; charset=utf-8',
-          'SOAPAction': 'http://www.portalfiscal.inf.br/cte/wsdl/CteConsultaProtocolo4/cteConsultaCT',
-        },
+      const response = await sefazSoapRequest({
+        url: endpoint.consulta,
         body: soapEnvelope,
-        signal: controller.signal,
+        soapAction: 'http://www.portalfiscal.inf.br/cte/wsdl/CteConsultaProtocolo4/cteConsultaCT',
+        pfx: config.pfx,
+        passphrase: config.passphrase,
+        timeoutMs: timeout,
       })
-
-      clearTimeout(timeoutId)
 
       if (!response.ok) {
         lastError = `HTTP ${response.status}: ${response.statusText}`
@@ -815,7 +812,7 @@ export async function consultaCte(
         break
       }
 
-      const responseBody = await response.text()
+      const responseBody = response.body
       const result = parseCteConsultaResponse(responseBody)
       const tempoResposta = Date.now() - startTime
 
@@ -891,20 +888,14 @@ export async function downloadCte(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-      const response = await fetch(endpoint.download, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/soap+xml; charset=utf-8',
-          'SOAPAction': 'http://www.portalfiscal.inf.br/cte/wsdl/CteDownload4/cteDownloadCT',
-        },
+      const response = await sefazSoapRequest({
+        url: endpoint.download,
         body: soapEnvelope,
-        signal: controller.signal,
+        soapAction: 'http://www.portalfiscal.inf.br/cte/wsdl/CteDownload4/cteDownloadCT',
+        pfx: config.pfx,
+        passphrase: config.passphrase,
+        timeoutMs: timeout,
       })
-
-      clearTimeout(timeoutId)
 
       if (!response.ok) {
         lastError = `HTTP ${response.status}: ${response.statusText}`
@@ -917,7 +908,7 @@ export async function downloadCte(
         break
       }
 
-      const responseBody = await response.text()
+      const responseBody = response.body
       const result = parseCteDownloadResponse(responseBody)
       const tempoResposta = Date.now() - startTime
 

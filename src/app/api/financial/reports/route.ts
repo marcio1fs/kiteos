@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 // GET /api/financial/reports - Generate financial reports
 export async function GET(request: NextRequest) {
@@ -216,7 +217,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error generating financial report:', error);
+    logger.error('Error generating financial report:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao gerar relatório financeiro' },
       { status: 500 }

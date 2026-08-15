@@ -16,10 +16,10 @@ describe('Rate Limiter SEFAZ', () => {
     })
 
     it('deve bloquear após exceder o limite de consultas', () => {
-      // Fazer mais requisições que o limite (30 para CONSULTA)
+      const officeId = `test-burst-${Date.now()}`
       let lastResult
       for (let i = 0; i < 35; i++) {
-        lastResult = checkRateLimit(`test-burst-${Date.now()}`, 'CONSULTA')
+        lastResult = checkRateLimit(officeId, 'CONSULTA')
       }
       // A última requisição deve ser bloqueada
       expect(lastResult!.allowed).toBe(false)

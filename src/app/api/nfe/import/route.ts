@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { parseNFeXml, validateXmlStructure, validateChave, validateCnpj } from '@/lib/nfe/xml-parser';
 import { createAuditLog } from '@/lib/audit';
@@ -274,7 +275,7 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error) {
-    console.error('Error importing NF-e:', error);
+    logger.error('Error importing NF-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         success: false,

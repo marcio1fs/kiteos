@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   keywords: ["KiteOS", "oficina mecânica", "gestão", "SaaS", "ordem de serviço", "estoque", "NF-e", "financeiro"],
   authors: [{ name: "KiteOS" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/logo.svg",
   },
   openGraph: {
     title: "KiteOS - Gestão de Oficinas",

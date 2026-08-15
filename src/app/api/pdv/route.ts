@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: sales });
   } catch (error) {
-    console.error('Error listing sales:', error);
+    logger.error('Error listing sales:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar vendas' },
       { status: 500 }
@@ -216,7 +217,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: sale }, { status: 201 });
   } catch (error) {
-    console.error('Error creating sale:', error);
+    logger.error('Error creating sale:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao criar venda' },
       { status: 500 }

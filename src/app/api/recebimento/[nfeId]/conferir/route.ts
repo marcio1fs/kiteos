@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
@@ -203,7 +204,7 @@ export async function POST(
     });
 
   } catch (error) {
-    console.error('Error confering reception:', error);
+    logger.error('Error confering reception:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao conferir recebimento'] },
       { status: 500 }

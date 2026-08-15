@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { isValidNCM, isValidCFOP } from '@/lib/server-validators';
@@ -125,7 +126,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error listing parts: [REDACTED]');
+    logger.error('Error listing parts: [REDACTED]', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar peças' },
       { status: 500 }
@@ -253,7 +254,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: part }, { status: 201 });
   } catch (error) {
-    console.error('Error creating part: [REDACTED]');
+    logger.error('Error creating part: [REDACTED]', { error: error instanceof Error ? error.message : String(error) });
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002') {
         return NextResponse.json(

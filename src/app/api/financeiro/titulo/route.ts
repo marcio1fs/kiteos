@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 // FIN-01 FIX: Added requireAuth — was completely unauthenticated
 export async function POST(request: NextRequest) {
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error) {
-    console.error('Error generating financial entry:', error);
+    logger.error('Error generating financial entry:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao gerar título financeiro'] },
       { status: 500 }

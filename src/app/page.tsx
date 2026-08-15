@@ -11,6 +11,7 @@ import { ServiceOrdersModule } from '@/components/modules/service-orders'
 import { ClientsModule } from '@/components/modules/clients'
 import { SuppliersModule } from '@/components/modules/suppliers'
 import { MechanicsModule } from '@/components/modules/mechanics'
+import { EmployeesModule } from '@/components/modules/employees'
 import { NFeModule } from '@/components/modules/nfe'
 import { SubscriptionsModule } from '@/components/modules/subscriptions'
 import { NotificationsModule } from '@/components/modules/notifications'
@@ -23,7 +24,7 @@ import { Loader2 } from 'lucide-react'
 
 export default function Home() {
   const { currentPage } = useNavStore()
-  const { isAuthenticated, checkAuth } = useAuthStore()
+  const { isAuthenticated, checkAuth, user } = useAuthStore()
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -77,10 +78,12 @@ export default function Home() {
         return <SuppliersModule />
       case 'mechanics':
         return <MechanicsModule />
+      case 'employees':
+        return <EmployeesModule />
       case 'subscriptions':
         return <SubscriptionsModule />
       case 'admin-subscriptions':
-        return <AdminSubscriptionsModule />
+        return (user?.role === 'ADMIN' || user?.role === 'OWNER') ? <AdminSubscriptionsModule /> : <DashboardModule />
       case 'notifications':
         return <NotificationsModule />
       case 'ai-assistant':

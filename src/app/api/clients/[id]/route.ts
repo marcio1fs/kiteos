@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { requireAuth, auditLog } from '@/lib/auth';
 import { isValidCPFCNPJ } from '@/lib/server-validators';
 import { sanitizeString } from '@/lib/sanitize';
+import { logger } from '@/lib/logger';
 
 // SEC-08 FIX: Migrated from verifyToken+getTokenFromHeaders to requireAuth
 export async function GET(
@@ -45,7 +46,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: client });
   } catch (error) {
-    console.error('Get client error: [REDACTED]');
+    logger.error('Get client error: [REDACTED]', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }
@@ -125,7 +126,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: client });
   } catch (error) {
-    console.error('Update client error: [REDACTED]');
+    logger.error('Update client error: [REDACTED]', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }
@@ -175,7 +176,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, data: { message: 'Cliente removido com sucesso' } });
   } catch (error) {
-    console.error('Delete client error: [REDACTED]');
+    logger.error('Delete client error: [REDACTED]', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }

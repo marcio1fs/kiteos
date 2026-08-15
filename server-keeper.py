@@ -16,14 +16,14 @@ SERVER_DIR = "/home/z/my-project/.next/standalone"
 def ensure_env():
     """Make sure .env has JWT_SECRET"""
     env_path = "/home/z/my-project/.env"
+    if not os.path.exists(env_path):
+        print("ERROR: .env file not found.", flush=True)
+        sys.exit(1)
     with open(env_path, 'r') as f:
         content = f.read()
-    if "JWT_SECRET" not in content:
-        with open(env_path, 'a') as f:
-            f.write("\nJWT_SECRET=k1te0s-s3cur3-jwt-pr0duct10n-2024-z-s3cr3t-k3y\n")
-    if "NEXTAUTH_SECRET" not in content:
-        with open(env_path, 'a') as f:
-            f.write("NEXTAUTH_SECRET=k1te0s-s3cur3-nextauth-2024-z-s3cr3t-k3y\n")
+    if "JWT_SECRET" not in content or "NEXTAUTH_SECRET" not in content:
+        print("ERROR: JWT_SECRET or NEXTAUTH_SECRET not found in .env", flush=True)
+        sys.exit(1)
 
 def log(msg):
     ts = time.strftime('%Y-%m-%d %H:%M:%S')

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth, auditLog } from '@/lib/auth';
 
@@ -41,7 +42,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: nfse });
   } catch (error) {
-    console.error('Error getting NFS-e:', error);
+    logger.error('Error getting NFS-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao buscar NFS-e' },
       { status: 500 }
@@ -113,7 +114,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
-    console.error('Error canceling NFS-e:', error);
+    logger.error('Error canceling NFS-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao cancelar NFS-e' },
       { status: 500 }

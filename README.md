@@ -1,2 +1,0 @@
-# kiteos
-ERP para oficinas

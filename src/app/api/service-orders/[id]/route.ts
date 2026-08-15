@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { requireAuth } from '@/lib/auth';
@@ -49,7 +50,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: serviceOrder });
   } catch (error) {
-    console.error('Error getting service order:', error);
+    logger.error('Error getting service order:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao buscar ordem de serviço' },
       { status: 500 }
@@ -411,7 +412,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
-    console.error('Error updating service order:', error);
+    logger.error('Error updating service order:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao atualizar ordem de serviço' },
       { status: 500 }
@@ -512,7 +513,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, data: { id, deleted: true } });
   } catch (error) {
-    console.error('Error deleting service order:', error);
+    logger.error('Error deleting service order:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao excluir ordem de serviço' },
       { status: 500 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { generateFiscalAlerts } from '@/lib/fiscal/dashboard-service';
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
       try {
         await generateFiscalAlerts(officeId);
       } catch (e) {
-        console.error('Error refreshing fiscal alerts:', e);
+        logger.error('Error refreshing fiscal alerts:', { error: e instanceof Error ? e.message : String(e) });
       }
     }
 
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
 
     if (tipo) where.tipo = tipo;
     if (severidade) where.severidade = severidade;
-    if (lido !== null && lido !== undefined) where.lido = lido === 'true';
+    if (lido !== null && lido !== undefined && lido.trim() !== '') where.lido = lido === 'true';
 
     const alertas = await db.fiscalAlerta.findMany({
       where,
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error listing fiscal alerts:', error);
+    logger.error('Error listing fiscal alerts:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar alertas fiscais' },
       { status: 500 }

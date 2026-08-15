@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { apiFetch } from '@/lib/store'
+import { useAuthStore, apiFetch } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -39,6 +39,7 @@ import {
   XCircle,
   CheckCircle2,
   Clock,
+  Shield,
 } from 'lucide-react'
 
 // =============================================
@@ -138,10 +139,12 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   CANCELADA: { label: 'Cancelada', color: 'bg-zinc-100 text-zinc-500 border-zinc-200', icon: XCircle },
 }
 
+
 // =============================================
 // MAIN COMPONENT
 // =============================================
 export function AdminSubscriptionsModule() {
+  const { user } = useAuthStore()
   const [subscribers, setSubscribers] = useState<SubscriberData[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -149,6 +152,18 @@ export function AdminSubscriptionsModule() {
   const [filterPlan, setFilterPlan] = useState<string>('')
   const [filterStatus, setFilterStatus] = useState<string>('')
   const [selectedSubscriber, setSelectedSubscriber] = useState<SubscriberData | null>(null)
+
+  if (user?.role !== 'ADMIN' && user?.role !== 'OWNER') {
+    return (
+      <div className="p-12 text-center text-zinc-500">
+        <Shield className="w-12 h-12 mx-auto text-red-500 mb-3" />
+        <h2 className="text-lg font-bold text-zinc-800">Acesso Restrito</h2>
+        <p className="text-sm text-zinc-600 mt-1">
+          Apenas administradores ou proprietários do sistema têm acesso a esta área.
+        </p>
+      </div>
+    )
+  }
 
   const fetchData = useCallback(async () => {
     setLoading(true)

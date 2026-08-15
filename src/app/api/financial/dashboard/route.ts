@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 // GET /api/financial/dashboard - Get financial dashboard data for an office
 export async function GET(request: NextRequest) {
@@ -203,7 +204,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error getting financial dashboard:', error);
+    logger.error('Error getting financial dashboard:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao buscar dados do dashboard financeiro' },
       { status: 500 }

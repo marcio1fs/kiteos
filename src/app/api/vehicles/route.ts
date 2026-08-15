@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth, auditLog } from '@/lib/auth';
 import { Prisma } from '@prisma/client';
@@ -71,7 +72,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('List vehicles error:', error);
+    logger.error('List vehicles error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }
@@ -152,7 +153,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: vehicle }, { status: 201 });
   } catch (error) {
-    console.error('Create vehicle error:', error);
+    logger.error('Create vehicle error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }

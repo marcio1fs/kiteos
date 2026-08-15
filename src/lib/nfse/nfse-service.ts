@@ -7,6 +7,8 @@
  * most Brazilian cities.
  */
 
+import { randomBytes } from 'crypto'
+
 // =============================================
 // TYPES
 // =============================================
@@ -159,8 +161,9 @@ export function validateNfseData(data: Partial<NfseServicoData>): { valid: boole
 
   if (data.valorServicos === undefined || data.valorServicos === null) {
     errors.push('Valor dos serviços é obrigatório')
-  } else if (data.valorServicos < 0) {
-    errors.push('Valor dos serviços não pode ser negativo')
+  } else if (data.valorServicos <= 0) {
+    // SEC-05 FIX: NFS-e com valor zero não é permitida pela legislação
+    errors.push('Valor dos serviços deve ser maior que zero')
   }
 
   if (data.valorDeducoes !== undefined && data.valorDeducoes < 0) {
@@ -327,12 +330,14 @@ export function generateNfseXml(
 /**
  * Generate a verification code for NFS-e.
  * Format: 8 alphanumeric characters.
+ * BUG-06 FIX: Uses crypto.randomBytes for cryptographically secure randomness.
  */
 function generateCodigoVerificacao(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  const bytes = randomBytes(8)
   let code = ''
   for (let i = 0; i < 8; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length))
+    code += chars.charAt(bytes[i] % chars.length)
   }
   return code
 }

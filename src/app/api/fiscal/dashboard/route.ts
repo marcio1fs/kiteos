@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { requireAuth } from '@/lib/auth';
 import { getFiscalDashboard, generateFiscalAlerts } from '@/lib/fiscal/dashboard-service';
 
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
       try {
         await generateFiscalAlerts(officeId);
       } catch (e) {
-        console.error('Error refreshing fiscal alerts:', e);
+        logger.error('Error refreshing fiscal alerts:', { error: e instanceof Error ? e.message : String(e) });
         // Don't fail the whole request if alerts generation fails
       }
     }
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: dashboardData });
   } catch (error) {
-    console.error('Error getting fiscal dashboard:', error);
+    logger.error('Error getting fiscal dashboard:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao buscar dados do dashboard fiscal' },
       { status: 500 }

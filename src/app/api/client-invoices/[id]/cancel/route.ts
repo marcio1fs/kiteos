@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 // POST /api/client-invoices/[id]/cancel - Cancel a client invoice
 export async function POST(
@@ -59,7 +60,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
-    console.error('Error canceling client invoice:', error);
+    logger.error('Error canceling client invoice:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao cancelar nota fiscal' },
       { status: 500 }

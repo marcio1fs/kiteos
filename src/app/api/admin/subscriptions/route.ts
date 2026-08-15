@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 // Plan definitions
 const PLANS: Record<string, {
@@ -22,20 +23,12 @@ const PLANS: Record<string, {
 // SECURITY FIX: Added authentication and OWNER role requirement
 export async function GET(request: NextRequest) {
   try {
-    // SECURITY FIX: Require OWNER authentication
-    const auth = await requireAuth(request);
+    // SECURITY FIX: Require ADMIN or OWNER authentication
+    const auth = await requireAuth(request, undefined, 'ADMIN');
     if (!auth.payload) {
       return NextResponse.json(
         { success: false, error: auth.error.message },
         { status: auth.error.status }
-      );
-    }
-
-    // SECURITY FIX: Only OWNER role can access admin dashboard
-    if (auth.payload.role !== 'OWNER') {
-      return NextResponse.json(
-        { success: false, error: 'Acesso restrito a proprietários' },
-        { status: 403 }
       );
     }
 
@@ -107,7 +100,6 @@ export async function GET(request: NextRequest) {
     // AUD-C08 FIX: This is a platform admin endpoint — any OWNER from any office
     // can see ALL subscriptions. This is a cross-tenant data breach.
     // For now, we redact sensitive PII from other offices.
-    // TODO: Implement PLATFORM_ADMIN role for proper access control.
 
     // AUD-C08 + AUD-H05 FIX: Convert Decimal to Number for comparisons
     const payingSubscribers = subscriptions.filter(s => Number(s.monthlyPrice) > 0 && (s.status === 'ATIVA' || s.status === 'TRIAL'));
@@ -180,7 +172,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error listing admin subscriptions:', error);
+    logger.error('Error listing admin subscriptions:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar assinaturas' },
       { status: 500 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/consulta/cep?cep=40000000
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: result })
   } catch (error: unknown) {
-    console.error('CEP lookup error:', error)
+    logger.error('CEP lookup error:', { error: error instanceof Error ? error.message : String(error) })
     if (error instanceof Error && error.name === 'TimeoutError') {
       return NextResponse.json(
         { success: false, error: 'Tempo esgotado ao consultar CEP. Tente novamente.' },

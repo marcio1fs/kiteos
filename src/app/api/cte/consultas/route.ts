@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -119,7 +120,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Erro ao listar CT-e:', error);
+    logger.error('Erro ao listar CT-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         success: false,

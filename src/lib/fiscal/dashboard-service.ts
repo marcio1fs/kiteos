@@ -233,7 +233,7 @@ export async function getFiscalDashboard(officeId: string): Promise<FiscalDashbo
 
 async function getGraficosMensais(officeId: string, meses: number): Promise<FiscalDashboardData['graficosMensais']> {
   const now = new Date()
-  const resultado: FiscalDashboardData['graficosMensais'] = []
+  const monthPromises = []
 
   for (let i = meses - 1; i >= 0; i--) {
     const date = new Date(now.getFullYear(), now.getMonth() - i, 1)
@@ -241,51 +241,53 @@ async function getGraficosMensais(officeId: string, meses: number): Promise<Fisc
     const inicioMes = new Date(date.getFullYear(), date.getMonth(), 1)
     const fimMes = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59)
 
-    const [nfeEnt, nfeSai, nfse, impostosEnt, impostosSai, impostosNfs] = await Promise.all([
-      db.invoice.count({
-        where: { officeId, deleted: false, tipoOperacao: 'ENTRADA', dataEmissao: { gte: inicioMes, lte: fimMes } },
-      }),
-      db.clientInvoice.count({
-        where: { officeId, deleted: false, dataEmissao: { gte: inicioMes, lte: fimMes } },
-      }),
-      db.nfseServico.count({
-        where: { officeId, deleted: false, status: 'EMITIDA', dataEmissao: { gte: inicioMes, lte: fimMes } },
-      }),
-      db.invoice.aggregate({
-        _sum: { valorIcms: true, valorIpi: true, valorPis: true, valorCofins: true },
-        where: { officeId, deleted: false, dataEmissao: { gte: inicioMes, lte: fimMes } },
-      }),
-      db.clientInvoice.aggregate({
-        _sum: { valorIcms: true, valorIpi: true, valorPis: true, valorCofins: true },
-        where: { officeId, deleted: false, dataEmissao: { gte: inicioMes, lte: fimMes } },
-      }),
-      db.nfseServico.aggregate({
-        _sum: { valorIssqn: true },
-        where: { officeId, deleted: false, status: 'EMITIDA', dataEmissao: { gte: inicioMes, lte: fimMes } },
-      }),
-    ])
+    monthPromises.push(
+      Promise.all([
+        db.invoice.count({
+          where: { officeId, deleted: false, tipoOperacao: 'ENTRADA', dataEmissao: { gte: inicioMes, lte: fimMes } },
+        }),
+        db.clientInvoice.count({
+          where: { officeId, deleted: false, dataEmissao: { gte: inicioMes, lte: fimMes } },
+        }),
+        db.nfseServico.count({
+          where: { officeId, deleted: false, status: 'EMITIDA', dataEmissao: { gte: inicioMes, lte: fimMes } },
+        }),
+        db.invoice.aggregate({
+          _sum: { valorIcms: true, valorIpi: true, valorPis: true, valorCofins: true },
+          where: { officeId, deleted: false, dataEmissao: { gte: inicioMes, lte: fimMes } },
+        }),
+        db.clientInvoice.aggregate({
+          _sum: { valorIcms: true, valorIpi: true, valorPis: true, valorCofins: true },
+          where: { officeId, deleted: false, dataEmissao: { gte: inicioMes, lte: fimMes } },
+        }),
+        db.nfseServico.aggregate({
+          _sum: { valorIssqn: true },
+          where: { officeId, deleted: false, status: 'EMITIDA', dataEmissao: { gte: inicioMes, lte: fimMes } },
+        }),
+      ]).then(([nfeEnt, nfeSai, nfse, impostosEnt, impostosSai, impostosNfs]) => {
+        const totalImpostos =
+          Number(impostosEnt._sum.valorIcms || 0) +
+          Number(impostosEnt._sum.valorIpi || 0) +
+          Number(impostosEnt._sum.valorPis || 0) +
+          Number(impostosEnt._sum.valorCofins || 0) +
+          Number(impostosSai._sum.valorIcms || 0) +
+          Number(impostosSai._sum.valorIpi || 0) +
+          Number(impostosSai._sum.valorPis || 0) +
+          Number(impostosSai._sum.valorCofins || 0) +
+          Number(impostosNfs._sum.valorIssqn || 0)
 
-    const totalImpostos =
-      Number(impostosEnt._sum.valorIcms || 0) +
-      Number(impostosEnt._sum.valorIpi || 0) +
-      Number(impostosEnt._sum.valorPis || 0) +
-      Number(impostosEnt._sum.valorCofins || 0) +
-      Number(impostosSai._sum.valorIcms || 0) +
-      Number(impostosSai._sum.valorIpi || 0) +
-      Number(impostosSai._sum.valorPis || 0) +
-      Number(impostosSai._sum.valorCofins || 0) +
-      Number(impostosNfs._sum.valorIssqn || 0)
-
-    resultado.push({
-      mes: mesKey,
-      nfeEntrada: nfeEnt,
-      nfeSaida: nfeSai,
-      nfse: nfse,
-      impostos: Math.round(totalImpostos * 100) / 100,
-    })
+        return {
+          mes: mesKey,
+          nfeEntrada: nfeEnt,
+          nfeSaida: nfeSai,
+          nfse: nfse,
+          impostos: Math.round(totalImpostos * 100) / 100,
+        }
+      })
+    )
   }
 
-  return resultado
+  return Promise.all(monthPromises)
 }
 
 // Obrigações fiscais são importadas do serviço compartilhado

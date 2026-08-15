@@ -4,32 +4,40 @@ import { db } from './db'
  * Generates the next sequential number in the format: A001, A002, ..., A999, B001, B002, ...
  *
  * The letter advances when the number reaches 999 within a group.
- * This function looks at existing records that match the new format pattern
- * to determine the next available number, ensuring uniqueness.
+ * Sequences are SCOPED PER OFFICE (officeId) to avoid cross-tenant number collisions.
+ *
+ * AUD-02 FIX: Added mandatory officeId parameter. Without it, different offices share
+ * the same sequence pool, causing gaps and potential cross-tenant information leakage.
  *
  * @param model - The Prisma model name ('sale', 'serviceOrder', or 'clientInvoice')
+ * @param officeId - The office tenant ID to scope the sequence to
  * @returns The next sequential number string (e.g., "A001")
  */
 export async function generateNextNumber(
-  model: 'sale' | 'serviceOrder' | 'clientInvoice'
+  model: 'sale' | 'serviceOrder' | 'clientInvoice',
+  officeId: string
 ): Promise<string> {
+  if (!officeId) {
+    throw new Error('[AUD-02] generateNextNumber: officeId is required to scope numbering per tenant');
+  }
+
   // Pattern: starts with a capital letter followed by 3 digits (A001, B123, etc.)
   const newFormatRegex = /^[A-Z]\d{3}$/
 
-  // Fetch all numbers from the table
+  // AUD-02 FIX: Fetch only records from the same office (tenant) to prevent cross-office sequence pollution
   const records = await (model === 'sale'
     ? db.sale.findMany({
         select: { number: true },
-        where: { deleted: false },
+        where: { officeId, deleted: false },
       })
     : model === 'serviceOrder'
     ? db.serviceOrder.findMany({
         select: { number: true },
-        where: { deleted: false },
+        where: { officeId, deleted: false },
       })
     : db.clientInvoice.findMany({
         select: { number: true },
-        where: { deleted: false },
+        where: { officeId, deleted: false },
       }))
 
   // Filter only records that match the new format
@@ -72,13 +80,14 @@ export async function generateNextNumber(
 
   // Ensure uniqueness (handle edge cases where number was manually created)
   // Use findFirst instead of findUnique since number is part of a compound unique key
+  // AUD-02 FIX: Also filter by officeId to prevent cross-tenant uniqueness checks
   let attempts = 0
   while (attempts < 200) {
     const existing = model === 'sale'
-      ? await db.sale.findFirst({ where: { number: candidate } })
+      ? await db.sale.findFirst({ where: { number: candidate, officeId } })
       : model === 'serviceOrder'
-      ? await db.serviceOrder.findFirst({ where: { number: candidate } })
-      : await db.clientInvoice.findFirst({ where: { number: candidate } })
+      ? await db.serviceOrder.findFirst({ where: { number: candidate, officeId } })
+      : await db.clientInvoice.findFirst({ where: { number: candidate, officeId } })
 
     if (!existing) break
     attempts++

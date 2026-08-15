@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { decryptToken } from '@/lib/token-encryption';
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
     // SECURITY FIX: Reduced logging — don't log full webhook payload
     // Was logging entire body including potentially sensitive payment data
     // ============================================================================
-    console.log('[MP Subscription Webhook] Received notification type:', body?.type, 'action:', body?.action);
+    logger.info('[MP Subscription Webhook] Received notification', { type: body?.type, action: body?.action });
 
     const { type, data, action } = body;
 
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
         const platformSecret = process.env.MP_PLATFORM_WEBHOOK_SECRET;
         if (platformSecret) {
           if (!validateWebhookSignature(rawBody, mpSignature, platformSecret)) {
-            console.error('[MP Subscription Webhook] REJECTED: Invalid signature for platform token');
+            logger.error('[MP Subscription Webhook] REJECTED: Invalid signature for platform token');
             return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 });
           }
         }
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
             paymentDetails = await mpResponse.json();
           }
         } catch (e) {
-          console.error('[MP Subscription Webhook] Error fetching with platform token:', e);
+          logger.error('[MP Subscription Webhook] Error fetching with platform token', { error: e instanceof Error ? e.message : String(e) });
         }
       }
 
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
             }
           } else {
             // SECURITY FIX: Reject if no webhook secret configured
-            console.warn('[MP Subscription Webhook] No webhook secret for office:', office.id, '- SKIPPING');
+            logger.warn('[MP Subscription Webhook] No webhook secret for office - SKIPPING', { officeId: office.id });
             continue;
           }
 
@@ -158,7 +159,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (!paymentDetails) {
-        console.warn('[MP Subscription Webhook] Could not fetch payment details');
+        logger.warn('[MP Subscription Webhook] Could not fetch payment details');
         // SECURITY FIX: Return 500 so MP retries, not 200
         return NextResponse.json({ success: false, error: 'Could not fetch payment' }, { status: 500 });
       }
@@ -189,7 +190,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (!subscription) {
-        console.warn('[MP Subscription Webhook] Subscription not found for preference:', preferenceId);
+        logger.warn('[MP Subscription Webhook] Subscription not found for preference', { preferenceId });
         return NextResponse.json({ success: true });
       }
 
@@ -304,12 +305,12 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      console.log(`[MP Subscription Webhook] Payment ${mpPaymentId} processed for subscription ${subscription.id}`);
+      logger.info(`[MP Subscription Webhook] Payment ${mpPaymentId} processed for subscription ${subscription.id}`);
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[MP Subscription Webhook] Error:', error);
+    logger.error('[MP Subscription Webhook] Error', { error: error instanceof Error ? error.message : String(error) });
     // ============================================================================
     // SECURITY FIX: Return 500 on genuine server errors so MP retries
     // Was always returning 200, hiding processing failures

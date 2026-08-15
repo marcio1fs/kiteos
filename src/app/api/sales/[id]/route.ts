@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
@@ -40,7 +41,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: sale });
   } catch (error) {
-    console.error('Error fetching sale:', error);
+    logger.error('Error fetching sale:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao buscar venda' },
       { status: 500 }
@@ -202,7 +203,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: updatedSale });
   } catch (error) {
-    console.error('Error updating sale:', error);
+    logger.error('Error updating sale:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao atualizar venda' },
       { status: 500 }
@@ -245,7 +246,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting sale:', error);
+    logger.error('Error deleting sale:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao excluir venda' },
       { status: 500 }

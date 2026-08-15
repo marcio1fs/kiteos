@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 // GET /api/client-invoices/[id] - Get invoice detail with items
 export async function GET(
@@ -44,7 +45,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: invoice });
   } catch (error) {
-    console.error('Error getting client invoice:', error);
+    logger.error('Error getting client invoice:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao buscar nota fiscal' },
       { status: 500 }
@@ -109,7 +110,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
-    console.error('Error canceling client invoice:', error);
+    logger.error('Error canceling client invoice:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao cancelar nota fiscal' },
       { status: 500 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest) {
       data: enrichedSubscriptions,
     });
   } catch (error) {
-    console.error('Error listing subscriptions: [REDACTED]');
+    logger.error('Error listing subscriptions: [REDACTED]', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar assinaturas' },
       { status: 500 }
@@ -200,7 +201,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error creating subscription: [REDACTED]');
+    logger.error('Error creating subscription: [REDACTED]', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao criar assinatura' },
       { status: 500 }

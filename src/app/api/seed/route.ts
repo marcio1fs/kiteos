@@ -4,6 +4,12 @@ import { hashPassword, requireAuth } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json(
+        { success: false, error: 'Rota indisponível em ambiente de produção' },
+        { status: 403 }
+      );
+    }
     // ============================================================================
     // SECURITY FIX: Added authentication check — was completely unauthenticated!
     // Any request could create an admin account with known credentials.

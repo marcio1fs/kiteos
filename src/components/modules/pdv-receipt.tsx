@@ -18,6 +18,9 @@ interface PdvReceiptProps {
     paymentMethod?: string | null
     paidAt?: string | null
     createdAt: string
+    user?: {
+      name: string
+    } | null
     client?: {
       name: string
       phone?: string | null
@@ -180,6 +183,11 @@ function ReceiptContent({ sale, office }: Omit<PdvReceiptProps, 'onClose'>) {
         <div>
           <strong>Data:</strong> {formatDate(sale.createdAt)}
         </div>
+        {sale.user?.name && (
+          <div>
+            <strong>Vendedor:</strong> {sale.user.name}
+          </div>
+        )}
       </div>
 
       <DashedLine />

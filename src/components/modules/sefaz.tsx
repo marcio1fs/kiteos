@@ -298,7 +298,8 @@ export function SefazModule() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       })
-      const data = await res.json()
+      const contentType = res.headers.get('content-type') || ''
+      const data = contentType.includes('application/json') ? await res.json() : { success: false, errors: [`Erro no servidor (${res.status})`] }
 
       if (data.success) {
         setCertDialogOpen(false)

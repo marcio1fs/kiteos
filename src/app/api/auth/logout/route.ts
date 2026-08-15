@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revokeRefreshToken, addToTokenBlacklist, auditLog, getAuthFromRequest } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/auth/logout
@@ -7,8 +8,11 @@ import { revokeRefreshToken, addToTokenBlacklist, auditLog, getAuthFromRequest }
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { refreshToken } = body;
+    let body: { refreshToken?: string } = {};
+    try {
+      body = await request.json();
+    } catch (e) {}
+    const refreshToken = request.cookies.get('kiteos_refresh')?.value || body.refreshToken;
 
     // Get current user from JWT
     const payload = await getAuthFromRequest(request);
@@ -33,12 +37,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: { message: 'Logout realizado com sucesso' },
     });
+
+    response.cookies.set('kiteos_token', '', { maxAge: 0, path: '/' });
+    response.cookies.set('kiteos_refresh', '', { maxAge: 0, path: '/api/auth/refresh' });
+
+    return response;
   } catch (error) {
-    console.error('Logout error:', error);
+    logger.error('Logout error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao realizar logout' },
       { status: 500 }

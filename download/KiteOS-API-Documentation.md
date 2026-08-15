@@ -1,4 +1,4 @@
-# OSMECH - Documentação da API e DDL do Banco de Dados
+# KiteOS - Documentação da API e DDL do Banco de Dados
 
 ## Data Definition Language (DDL)
 
@@ -505,6 +505,6 @@ CREATE TABLE tax_rules (
 
 ## Credenciais de Demo
 
-- **Email**: admin@osmech.com
+- **Email**: admin@kiteos.com
 - **Senha**: admin123
 - **Oficina**: Oficina Central (CNPJ: 12.345.678/0001-90)

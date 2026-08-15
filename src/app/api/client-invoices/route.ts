@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { generateNextNumber } from '@/lib/numbering';
+import { logger } from '@/lib/logger';
+import { generateChaveAcesso } from '@/lib/nfe/chave-generator';
 
 // GET /api/client-invoices - List client invoices
 export async function GET(request: NextRequest) {
@@ -70,7 +72,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error listing client invoices:', error);
+    logger.error('Error listing client invoices:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar notas fiscais de saída' },
       { status: 500 }
@@ -167,8 +169,8 @@ export async function POST(request: NextRequest) {
     const office = await db.office.findUnique({ where: { id: officeId } });
     const officeState = office?.state || 'BA';
 
-    // Generate sequential number
-    const number = await generateNextNumber('clientInvoice');
+    // Generate sequential number — AUD-02 FIX: scoped to this office
+    const number = await generateNextNumber('clientInvoice', officeId);
 
     if (type === 'VENDA' && saleId) {
       // Generate from Sale
@@ -236,8 +238,9 @@ export async function POST(request: NextRequest) {
         let aliqCofins = 0;
 
         if (ncm && cfop) {
+          // SEC-01 FIX: Scope tax rule lookup by officeId to prevent cross-tenant data leak
           const taxRule = await db.taxRule.findFirst({
-            where: { ncm, cfop, state: officeState, active: true },
+            where: { ncm, cfop, state: officeState, active: true, officeId },
           });
           if (taxRule) {
             aliqIcms = Number(taxRule.aliqIcms);
@@ -283,9 +286,20 @@ export async function POST(request: NextRequest) {
 
       const client = sale.client;
 
+      const chave = generateChaveAcesso({
+        uf: office?.state,
+        dataEmissao: new Date(),
+        cnpjEmitente: office?.cnpj || '',
+        modelo: '55',
+        serie: '1',
+        numero: number,
+      });
+
       const invoice = await db.clientInvoice.create({
         data: {
           number,
+          chave,
+          serie: '1',
           type: 'VENDA',
           status: 'EMITIDA',
           destNome: client?.name || 'Consumidor',
@@ -388,8 +402,9 @@ export async function POST(request: NextRequest) {
         let aliqCofins = 0;
 
         if (ncm && cfop) {
+          // SEC-01 FIX: Scope tax rule lookup by officeId to prevent cross-tenant data leak
           const taxRule = await db.taxRule.findFirst({
-            where: { ncm, cfop, state: officeState, active: true },
+            where: { ncm, cfop, state: officeState, active: true, officeId },
           });
           if (taxRule) {
             aliqIcms = Number(taxRule.aliqIcms);
@@ -435,9 +450,20 @@ export async function POST(request: NextRequest) {
 
       const client = os.client;
 
+      const chave = generateChaveAcesso({
+        uf: office?.state,
+        dataEmissao: new Date(),
+        cnpjEmitente: office?.cnpj || '',
+        modelo: '55',
+        serie: '1',
+        numero: number,
+      });
+
       const invoice = await db.clientInvoice.create({
         data: {
           number,
+          chave,
+          serie: '1',
           type: 'SERVICO',
           status: 'EMITIDA',
           destNome: client.name,
@@ -482,7 +508,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
-    console.error('Error creating client invoice:', error);
+    logger.error('Error creating client invoice:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao gerar nota fiscal' },
       { status: 500 }

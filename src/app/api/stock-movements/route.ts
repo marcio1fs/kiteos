@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { requireAuth } from '@/lib/auth';
@@ -68,7 +69,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: stockMovements });
   } catch (error) {
-    console.error('Error listing stock movements:', error);
+    logger.error('Error listing stock movements:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar movimentações de estoque' },
       { status: 500 }
@@ -208,7 +209,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (error) {
-    console.error('Error creating stock movement:', error);
+    logger.error('Error creating stock movement:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao criar movimentação de estoque' },
       { status: 500 }

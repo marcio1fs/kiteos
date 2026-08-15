@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error listing tax rules:', error);
+    logger.error('Error listing tax rules:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao listar regras fiscais'] },
       { status: 500 }
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error) {
-    console.error('Error creating tax rule:', error);
+    logger.error('Error creating tax rule:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao criar regra fiscal'] },
       { status: 500 }
@@ -241,7 +242,7 @@ export async function PUT(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error updating tax rule:', error);
+    logger.error('Error updating tax rule:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao atualizar regra fiscal'] },
       { status: 500 }

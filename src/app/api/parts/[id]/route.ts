@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
@@ -42,7 +43,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: part });
   } catch (error) {
-    console.error('Error getting part:', error);
+    logger.error('Error getting part:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao buscar peça' },
       { status: 500 }
@@ -170,7 +171,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
-    console.error('Error updating part:', error);
+    logger.error('Error updating part:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao atualizar peça' },
       { status: 500 }
@@ -251,7 +252,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, data: { id, deleted: true } });
   } catch (error) {
-    console.error('Error deleting part:', error);
+    logger.error('Error deleting part:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao excluir peça' },
       { status: 500 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import MercadoPagoConfig, { Preference } from 'mercadopago';
@@ -196,7 +197,7 @@ export async function POST(request: NextRequest) {
       // First try with auto_return (requires valid back_urls)
       result = await preference.create({ body: { ...preferenceBody, auto_return: 'approved' as const } });
     } catch (firstError: unknown) {
-      console.log('[MP Create] auto_return failed, trying without it:', firstError);
+      logger.warn('[MP Create] auto_return failed, trying without it', { error: firstError instanceof Error ? firstError.message : String(firstError) });
       // If auto_return fails (e.g., back_urls not validated by MP), try without it
       result = await preference.create({ body: preferenceBody });
     }
@@ -230,7 +231,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: unknown) {
-    console.error('Error creating subscription payment:', error);
+    logger.error('Error creating subscription payment', { error: error instanceof Error ? error.message : String(error) });
 
     // Check for MP API specific errors
     let errMsg = 'Erro ao criar pagamento de assinatura';

@@ -77,12 +77,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Decrypt certificate PFX and passphrase for mTLS
+    let pfx: string | undefined;
+    let passphrase: string | undefined;
+    try {
+      if (certificado.arquivoContent && certificado.senhaCriptografada) {
+        pfx = decryptFileContent(certificado.arquivoContent);
+        passphrase = decryptPassword(certificado.senhaCriptografada);
+      }
+    } catch (certDecError) {
+      console.error('Erro ao descriptografar certificado:', certDecError);
+    }
+
     // Build config from certificate
     const cnpjCpf = certificado.cnpjCpf || '';
     const config: SefazClientConfig = {
       ambiente: certificado.ambiente as Ambiente,
       uf,
       cnpjCpf,
+      pfx,
+      passphrase,
     };
 
     // Call consultaProtocolo

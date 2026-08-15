@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth, auditLog } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
+import { logger } from '@/lib/logger';
 
 // POST /api/estoque/movimentar - Stock movement (ENTRADA/SAIDA) with proper auth and concurrency control
 export async function POST(request: NextRequest) {
@@ -172,7 +173,7 @@ export async function POST(request: NextRequest) {
           // If version changed, another transaction modified it — retry logic would go here
           // For now, we proceed (SQLite serializes transactions anyway)
           if (updateResult.count === 0) {
-            console.warn(`Optimistic lock conflict on part ${part.id} — concurrent modification detected`);
+            logger.warn(`Optimistic lock conflict on part ${part.id} — concurrent modification detected`);
           }
 
           results.push({
@@ -244,7 +245,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error updating stock:', error);
+    logger.error('Error updating stock:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao atualizar estoque'] },
       { status: 500 }

@@ -105,8 +105,9 @@ export async function getObrigacoesFromService(officeId: string): Promise<Obriga
   }
 
   // DIRF (anual, entrega até fevereiro do ano seguinte)
+  // BUG-02 FIX: DIRF do ano anterior vence em fevereiro do ANO CORRENTE
   const anoAnterior = now.getFullYear() - 1
-  const dataVencimentoDIRF = new Date(anoAnterior, 1, 28)
+  const dataVencimentoDIRF = new Date(now.getFullYear(), 1, 28)
   let statusDIRF: ObrigacaoFiscal['status'] = 'PENDENTE'
   if (dataVencimentoDIRF < now) {
     statusDIRF = 'ATRASADA'

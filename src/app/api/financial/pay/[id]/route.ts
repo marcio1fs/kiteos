@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 // PUT /api/financial/pay/[id] - Mark entry as paid
 export async function PUT(
@@ -122,7 +123,7 @@ export async function PUT(
     });
 
   } catch (error) {
-    console.error('Error marking financial entry as paid:', error);
+    logger.error('Error marking financial entry as paid:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao marcar entrada como paga' },
       { status: 500 }

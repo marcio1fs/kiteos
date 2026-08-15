@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
@@ -45,7 +46,7 @@ export async function GET(
     });
 
   } catch (error) {
-    console.error('Error fetching NF-e:', error);
+    logger.error('Error fetching NF-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao buscar NF-e'] },
       { status: 500 }
@@ -194,7 +195,7 @@ export async function PUT(
     });
 
   } catch (error) {
-    console.error('Error updating NF-e:', error);
+    logger.error('Error updating NF-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao atualizar NF-e'] },
       { status: 500 }
@@ -272,7 +273,7 @@ export async function DELETE(
     });
 
   } catch (error) {
-    console.error('Error deleting NF-e:', error);
+    logger.error('Error deleting NF-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao excluir NF-e'] },
       { status: 500 }

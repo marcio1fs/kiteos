@@ -318,17 +318,14 @@ export function getUfFromChave(chave: string): string | null {
 
 /**
  * Retorna os endpoints para uma UF e ambiente
+ * SEC-04 FIX: Throws error for invalid UF instead of silently falling back to RS
  */
 export function getSefazEndpoint(uf: string, ambiente: Ambiente): SefazEndpoint {
   const normalizedUf = uf.toUpperCase().trim()
   const endpoints = ambiente === 'PRODUCAO' ? PRODUCAO_ENDPOINTS : HOMOLOGACAO_ENDPOINTS
   const endpoint = endpoints[normalizedUf]
   if (!endpoint) {
-    return endpoints['RS'] || {
-      consulta: 'https://homologacao.nfe.sefaz.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
-      download: 'https://homologacao.nfe.sefaz.rs.gov.br/ws/NfeDownloadNF/NfeDownloadNF4.asmx',
-      statusServico: 'https://homologacao.nfe.sefaz.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx',
-    }
+    throw new Error(`UF "${uf}" não possui endpoint SEFAZ configurado para o ambiente ${ambiente}. UFs válidas: ${Object.keys(endpoints).join(', ')}`)
   }
   return endpoint
 }

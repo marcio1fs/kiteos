@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { signToken, verifyPassword, hashPassword, needsHashMigration, auditLog, generateRefreshToken } from '@/lib/auth';
 import {
   checkRateLimit,
@@ -153,11 +154,11 @@ export async function POST(request: NextRequest) {
       userAgent: request.headers.get('user-agent') || 'unknown',
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: {
-        token,
-        refreshToken,
+        token, // DEPRECATED: Use HttpOnly cookie instead
+        refreshToken, // DEPRECATED: Use HttpOnly cookie instead
         user: {
           id: user.id,
           name: user.name,
@@ -179,9 +180,27 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    response.cookies.set('kiteos_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 8 * 60 * 60, // 8 hours
+    });
+
+    response.cookies.set('kiteos_refresh', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/auth/refresh',
+      maxAge: 7 * 24 * 60 * 60, // 7 days
+    });
+
+    return response;
   } catch (error) {
     // SECURITY FIX (#69): Don't log error details that might contain sensitive data
-    console.error('Login error: [REDACTED]');
+    logger.error('Login error', { reason: 'REDACTED' });
     return NextResponse.json(
       { success: false, error: 'Erro interno do servidor' },
       { status: 500 }

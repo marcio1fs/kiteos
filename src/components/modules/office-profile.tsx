@@ -203,7 +203,8 @@ export function OfficeProfileModule() {
         },
         body: formData,
       })
-      const data = await res.json()
+      const contentType = res.headers.get('content-type') || ''
+      const data = contentType.includes('application/json') ? await res.json() : { success: false, error: `Erro no upload (${res.status})` }
 
       if (data.success) {
         setLogoPreview(resolveLogoUrl(data.data.logo))
@@ -648,170 +649,172 @@ export function OfficeProfileModule() {
         </CardContent>
       </Card>
 
-      {/* Mercado Pago Configuration Card */}
-      <Card className="border-zinc-200/60">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-              <CreditCard className="w-5 h-5 text-blue-600" />
-            </div>
-            <div className="flex-1">
-              <CardTitle className="text-base">Mercado Pago</CardTitle>
-              <CardDescription>
-                Configure para receber pagamentos de assinaturas e vendas PDV
-              </CardDescription>
-            </div>
-            {mpConfig.mpValid ? (
-              <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                <CheckCircle className="w-3 h-3 mr-1" /> Conectado
-              </Badge>
-            ) : mpConfig.mpAccessToken ? (
-              <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">
-                <AlertTriangle className="w-3 h-3 mr-1" /> Não validado
-              </Badge>
-            ) : (
-              <Badge className="bg-zinc-100 text-zinc-500 hover:bg-zinc-100">
-                <XCircle className="w-3 h-3 mr-1" /> Desconectado
-              </Badge>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {mpMessage && (
-            <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${
-              mpMessage.type === 'success'
-                ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                : 'bg-red-50 border border-red-200 text-red-700'
-            }`}>
-              {mpMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-              {mpMessage.text}
-            </div>
-          )}
-
-          {/* Enable/Disable Toggle */}
-          <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-50">
-            <div>
-              <p className="text-sm font-medium text-zinc-800">Ativar Mercado Pago</p>
-              <p className="text-xs text-zinc-500">Habilita pagamentos online para assinaturas e PDV</p>
-            </div>
-            <Switch
-              checked={mpConfig.mpEnabled}
-              onCheckedChange={(checked) => setMpConfig({ ...mpConfig, mpEnabled: checked })}
-            />
-          </div>
-
-          {/* Sandbox Mode Toggle */}
-          <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-50">
-            <div>
-              <p className="text-sm font-medium text-zinc-800">Modo Sandbox (Teste)</p>
-              <p className="text-xs text-zinc-500">Use para testar sem cobranças reais</p>
-            </div>
-            <Switch
-              checked={mpConfig.mpSandbox}
-              onCheckedChange={(checked) => setMpConfig({ ...mpConfig, mpSandbox: checked })}
-            />
-          </div>
-
-          {/* Access Token */}
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              Access Token
-              {mpConfig.mpAccessToken && (
-                <Badge variant="outline" className={`text-xs ${mpConfig.mpAccessToken.startsWith('TEST-') ? 'border-yellow-300 text-yellow-700' : mpConfig.mpAccessToken.startsWith('APP_USR-') ? 'border-emerald-300 text-emerald-700' : 'border-zinc-300'}`}>
-                  {mpConfig.mpAccessToken.startsWith('TEST-') ? 'Sandbox' : mpConfig.mpAccessToken.startsWith('APP_USR-') ? 'Produção' : 'Custom'}
+      {/* Mercado Pago Configuration Card - Restricted to ADMIN */}
+      {user?.role === 'ADMIN' && (
+        <Card className="border-zinc-200/60">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                <CreditCard className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="text-base">Mercado Pago</CardTitle>
+                <CardDescription>
+                  Configure para receber pagamentos de assinaturas e vendas PDV
+                </CardDescription>
+              </div>
+              {mpConfig.mpValid ? (
+                <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                  <CheckCircle className="w-3 h-3 mr-1" /> Conectado
+                </Badge>
+              ) : mpConfig.mpAccessToken ? (
+                <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">
+                  <AlertTriangle className="w-3 h-3 mr-1" /> Não validado
+                </Badge>
+              ) : (
+                <Badge className="bg-zinc-100 text-zinc-500 hover:bg-zinc-100">
+                  <XCircle className="w-3 h-3 mr-1" /> Desconectado
                 </Badge>
               )}
-            </Label>
-            <Input
-              type="password"
-              value={mpConfig.mpAccessToken}
-              onChange={(e) => setMpConfig({ ...mpConfig, mpAccessToken: e.target.value, mpValid: false })}
-              placeholder="TEST-xxxx ou APP_USR-xxxx"
-              className="border-zinc-200 font-mono text-sm"
-            />
-            <p className="text-xs text-zinc-500">
-              Obtenha em: Mercado Pago → Seu Negócio → Configurações → Credenciais
-            </p>
-          </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {mpMessage && (
+              <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${
+                mpMessage.type === 'success'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                  : 'bg-red-50 border border-red-200 text-red-700'
+              }`}>
+                {mpMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                {mpMessage.text}
+              </div>
+            )}
 
-          {/* Public Key */}
-          <div className="space-y-2">
-            <Label>Public Key (opcional)</Label>
-            <Input
-              type="password"
-              value={mpConfig.mpPublicKey}
-              onChange={(e) => setMpConfig({ ...mpConfig, mpPublicKey: e.target.value })}
-              placeholder="APP_USR-xxxx ou TEST-xxxx"
-              className="border-zinc-200 font-mono text-sm"
-            />
-          </div>
-
-          {/* User ID (read-only, set by validation) */}
-          {mpConfig.mpUserId && (
-            <div className="space-y-2">
-              <Label>ID da Conta MP</Label>
-              <Input
-                value={mpConfig.mpUserId}
-                readOnly
-                className="border-zinc-200 bg-zinc-50 text-zinc-600"
+            {/* Enable/Disable Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-50">
+              <div>
+                <p className="text-sm font-medium text-zinc-800">Ativar Mercado Pago</p>
+                <p className="text-xs text-zinc-500">Habilita pagamentos online para assinaturas e PDV</p>
+              </div>
+              <Switch
+                checked={mpConfig.mpEnabled}
+                onCheckedChange={(checked) => setMpConfig({ ...mpConfig, mpEnabled: checked })}
               />
             </div>
-          )}
 
-          {/* Actions */}
-          <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Button
-              variant="outline"
-              onClick={handleMpValidate}
-              disabled={mpValidating || !mpConfig.mpAccessToken}
-              className="border-blue-200 text-blue-700 hover:bg-blue-50"
-            >
-              {mpValidating ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Validando...
-                </>
-              ) : (
-                <>
-                  <Shield className="w-4 h-4" />
-                  Validar Token
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={handleMpSave}
-              disabled={mpSaving}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              {mpSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  Salvar Configurações
-                </>
-              )}
-            </Button>
-          </div>
-
-          {/* Help Link */}
-          <div className="p-3 rounded-lg bg-blue-50 text-xs text-blue-700 flex items-start gap-2">
-            <ExternalLink className="w-4 h-4 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-semibold mb-1">Como obter as credenciais:</p>
-              <ol className="list-decimal list-inside space-y-0.5">
-                <li>Acesse <a href="https://www.mercadopago.com.br/settings/account/credentials" target="_blank" rel="noopener noreferrer" className="underline">mercadopago.com.br/settings/account/credentials</a></li>
-                <li>Para testes, use as credenciais de Sandbox (começam com TEST-)</li>
-                <li>Para produção, use as credenciais de Produção (começam com APP_USR-)</li>
-                <li>Copie o Access Token e cole acima</li>
-              </ol>
+            {/* Sandbox Mode Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-50">
+              <div>
+                <p className="text-sm font-medium text-zinc-800">Modo Sandbox (Teste)</p>
+                <p className="text-xs text-zinc-500">Use para testar sem cobranças reais</p>
+              </div>
+              <Switch
+                checked={mpConfig.mpSandbox}
+                onCheckedChange={(checked) => setMpConfig({ ...mpConfig, mpSandbox: checked })}
+              />
             </div>
-          </div>
-        </CardContent>
-      </Card>
+
+            {/* Access Token */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                Access Token
+                {mpConfig.mpAccessToken && (
+                  <Badge variant="outline" className={`text-xs ${mpConfig.mpAccessToken.startsWith('TEST-') ? 'border-yellow-300 text-yellow-700' : mpConfig.mpAccessToken.startsWith('APP_USR-') ? 'border-emerald-300 text-emerald-700' : 'border-zinc-300'}`}>
+                    {mpConfig.mpAccessToken.startsWith('TEST-') ? 'Sandbox' : mpConfig.mpAccessToken.startsWith('APP_USR-') ? 'Produção' : 'Custom'}
+                  </Badge>
+                )}
+              </Label>
+              <Input
+                type="password"
+                value={mpConfig.mpAccessToken}
+                onChange={(e) => setMpConfig({ ...mpConfig, mpAccessToken: e.target.value, mpValid: false })}
+                placeholder="TEST-xxxx ou APP_USR-xxxx"
+                className="border-zinc-200 font-mono text-sm"
+              />
+              <p className="text-xs text-zinc-500">
+                Obtenha em: Mercado Pago → Seu Negócio → Configurações → Credenciais
+              </p>
+            </div>
+
+            {/* Public Key */}
+            <div className="space-y-2">
+              <Label>Public Key (opcional)</Label>
+              <Input
+                type="password"
+                value={mpConfig.mpPublicKey}
+                onChange={(e) => setMpConfig({ ...mpConfig, mpPublicKey: e.target.value })}
+                placeholder="APP_USR-xxxx ou TEST-xxxx"
+                className="border-zinc-200 font-mono text-sm"
+              />
+            </div>
+
+            {/* User ID (read-only, set by validation) */}
+            {mpConfig.mpUserId && (
+              <div className="space-y-2">
+                <Label>ID da Conta MP</Label>
+                <Input
+                  value={mpConfig.mpUserId}
+                  readOnly
+                  className="border-zinc-200 bg-zinc-50 text-zinc-600"
+                />
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={handleMpValidate}
+                disabled={mpValidating || !mpConfig.mpAccessToken}
+                className="border-blue-200 text-blue-700 hover:bg-blue-50"
+              >
+                {mpValidating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Validando...
+                  </>
+                ) : (
+                  <>
+                    <Shield className="w-4 h-4" />
+                    Validar Token
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={handleMpSave}
+                disabled={mpSaving}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {mpSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Salvar Configurações
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {/* Help Link */}
+            <div className="p-3 rounded-lg bg-blue-50 text-xs text-blue-700 flex items-start gap-2">
+              <ExternalLink className="w-4 h-4 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold mb-1">Como obter as credenciais:</p>
+                <ol className="list-decimal list-inside space-y-0.5">
+                  <li>Acesse <a href="https://www.mercadopago.com.br/settings/account/credentials" target="_blank" rel="noopener noreferrer" className="underline">mercadopago.com.br/settings/account/credentials</a></li>
+                  <li>Para testes, use as credenciais de Sandbox (começam com TEST-)</li>
+                  <li>Para produção, use as credenciais de Produção (começam com APP_USR-)</li>
+                  <li>Copie o Access Token e cole acima</li>
+                </ol>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* WhatsApp Configuration Card */}
       <Card className="border-zinc-200/60">

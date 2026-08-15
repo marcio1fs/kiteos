@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit';
 import { requireAuth } from '@/lib/auth';
@@ -213,7 +214,7 @@ export async function POST(
     });
 
   } catch (error) {
-    console.error('Error validating NF-e:', error);
+    logger.error('Error validating NF-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, errors: ['Erro interno ao validar NF-e'] },
       { status: 500 }

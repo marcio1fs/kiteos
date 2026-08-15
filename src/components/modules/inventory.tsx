@@ -20,6 +20,7 @@ import {
   Plus,
   Search,
   AlertTriangle,
+  AlertCircle,
   Edit,
   ArrowUpDown,
   Eye,
@@ -724,14 +725,14 @@ export default function InventoryModule() {
 
         {/* New/Edit Part Dialog */}
         <Dialog open={showPartDialog} onOpenChange={setShowPartDialog}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-[95vw] md:max-w-4xl lg:max-w-5xl max-h-[92vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5 text-emerald-600" />
-                {editingPart ? 'Editar Peça' : 'Nova Peça'}
+                {editingPart ? 'Editar Peça' : 'Nova Peça / Produto'}
               </DialogTitle>
             </DialogHeader>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="sku">SKU *</Label>
                 <Input
@@ -809,19 +810,24 @@ export default function InventoryModule() {
 
               <Separator className="col-span-full" />
 
+              <div className="col-span-full p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-blue-600" />
+                <span>O cadastro cria a ficha do produto/peça. As entradas de quantidade no estoque devem ser realizadas via <strong>Nota Fiscal</strong> ou <strong>Recibo de Compra</strong> no módulo de NF-e / Entrada.</span>
+              </div>
+
               <div className="space-y-2">
-                <Label htmlFor="quantity">Quantidade</Label>
+                <Label htmlFor="quantity">Estoque Inicial</Label>
                 <Input
                   id="quantity"
                   type="number"
                   min={0}
                   value={partForm.quantity}
                   onChange={(e) => setPartForm({ ...partForm, quantity: parseFloat(e.target.value) || 0 })}
-                  disabled={!!editingPart}
+                  disabled
                 />
-                {editingPart && (
-                  <p className="text-xs text-zinc-500">Use &quot;Movimentação&quot; para alterar a quantidade</p>
-                )}
+                <p className="text-xs text-zinc-500">
+                  {editingPart ? 'Entradas/saídas são registradas via documento de entrada ou movimentação' : 'Cadastre o produto com estoque zero e dê entrada via NF-e / Recibo de Compra'}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="minQuantity">Quantidade Mínima</Label>

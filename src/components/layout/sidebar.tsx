@@ -23,6 +23,7 @@ import {
   Crown,
   Shield,
   ShieldCheck,
+  UserCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -38,6 +39,7 @@ const navItems = [
   { id: 'clients' as const, label: 'Clientes', icon: Users },
   { id: 'suppliers' as const, label: 'Fornecedores', icon: Truck },
   { id: 'mechanics' as const, label: 'Mecânicos', icon: WrenchIcon },
+  { id: 'employees' as const, label: 'Funcionários / Vendedores', icon: UserCheck },
   { id: 'subscriptions' as const, label: 'Planos', icon: CreditCard },
   { id: 'admin-subscriptions' as const, label: 'Admin Assinaturas', icon: Shield },
   { id: 'notifications' as const, label: 'Notificações', icon: Bell },
@@ -80,25 +82,27 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-1">
-        {navItems.map((item) => {
-          const Icon = item.icon
-          const isActive = currentPage === item.id
-          return (
-            <button
-              key={item.id}
-              onClick={() => setPage(item.id)}
-              className={cn(
-                'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm transition-all duration-200',
-                isActive
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
-                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              )}
-            >
-              <Icon className="w-4 h-4 shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-            </button>
-          )
-        })}
+        {navItems
+          .filter((item) => item.id !== 'admin-subscriptions' || user?.role === 'ADMIN' || user?.role === 'OWNER')
+          .map((item) => {
+            const Icon = item.icon
+            const isActive = currentPage === item.id
+            return (
+              <button
+                key={item.id}
+                onClick={() => setPage(item.id)}
+                className={cn(
+                  'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm transition-all duration-200',
+                  isActive
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                )}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </button>
+            )
+          })}
       </nav>
 
       {/* Footer */}
@@ -161,26 +165,28 @@ export function MobileNav() {
               </div>
             </div>
             <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-1">
-              {navItems.map((item) => {
-                const NavIcon = item.icon
-                const isActive = currentPage === item.id
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setPage(item.id)
-                      setOpen(false)
-                    }}
-                    className={cn(
-                      'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm transition-all',
-                      isActive ? 'bg-emerald-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-                    )}
-                  >
-                    <NavIcon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </button>
-                )
-              })}
+              {navItems
+                .filter((item) => item.id !== 'admin-subscriptions' || user?.role === 'ADMIN' || user?.role === 'OWNER')
+                .map((item) => {
+                  const NavIcon = item.icon
+                  const isActive = currentPage === item.id
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setPage(item.id)
+                        setOpen(false)
+                      }}
+                      className={cn(
+                        'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm transition-all',
+                        isActive ? 'bg-emerald-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                      )}
+                    >
+                      <NavIcon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                    </button>
+                  )
+                })}
             </nav>
             <div className="p-3 border-t border-zinc-800">
               {office && (

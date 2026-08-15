@@ -4,6 +4,7 @@ import { requireAuth, auditLog } from '@/lib/auth';
 import { Prisma } from '@prisma/client';
 import { isValidCPFCNPJ } from '@/lib/server-validators';
 import { sanitizeString, SANITIZABLE_FIELDS } from '@/lib/sanitize';
+import { logger } from '@/lib/logger';
 
 // SEC-08 FIX: Migrated from verifyToken+getTokenFromHeaders to requireAuth
 export async function GET(request: NextRequest) {
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('List clients error:', error);
+    logger.error('List clients error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }
@@ -142,7 +143,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: client }, { status: 201 });
   } catch (error) {
-    console.error('Create client error:', error);
+    logger.error('Create client error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }
 }

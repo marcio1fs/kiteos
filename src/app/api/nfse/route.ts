@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth, auditLog } from '@/lib/auth';
 import { calculateIssqn, validateNfseData, generateNfseXml, getCurrentCompetencia, ALIQ_ISSQN_PADRAO } from '@/lib/nfse';
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: nfseList });
   } catch (error) {
-    console.error('Error listing NFS-e:', error);
+    logger.error('Error listing NFS-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar NFS-e' },
       { status: 500 }
@@ -241,7 +242,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: nfse }, { status: 201 });
   } catch (error) {
-    console.error('Error creating NFS-e:', error);
+    logger.error('Error creating NFS-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao criar NFS-e' },
       { status: 500 }

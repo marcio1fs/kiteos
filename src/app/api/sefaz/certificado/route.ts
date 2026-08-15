@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
@@ -6,6 +7,7 @@ import {
   encryptPassword,
   encryptFileContent,
   validatePfxBasic,
+  getCertificateDetails,
 } from '@/lib/sefaz';
 import { applyRateLimit } from '@/lib/sefaz/rate-limiter';
 
@@ -83,7 +85,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Erro ao buscar certificado:', error);
+    logger.error('Erro ao buscar certificado:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         success: false,
@@ -173,6 +175,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate password and extract certificate details (validade, CNPJ, Razão Social)
+    let certDetails: { validade: Date; cnpjCpf: string | null; razaoSocial: string | null } | null = null;
+    try {
+      const details = getCertificateDetails(base64Content, senha);
+      certDetails = {
+        validade: details.validade,
+        cnpjCpf: details.cnpjCpf,
+        razaoSocial: details.razaoSocial,
+      };
+    } catch (certErr) {
+      logger.error('Erro ao validar senha do certificado PFX:', { error: certErr instanceof Error ? certErr.message : String(certErr) });
+      return NextResponse.json(
+        { success: false, error: 'Senha incorreta ou arquivo de certificado digital corrompido/inválido' },
+        { status: 400 }
+      );
+    }
+
     // Encrypt password and file content
     const senhaCriptografada = encryptPassword(senha);
     const arquivoContentCriptografado = encryptFileContent(base64Content);
@@ -195,7 +214,9 @@ export async function POST(request: NextRequest) {
         nomeArquivo: arquivo.name,
         arquivoContent: arquivoContentCriptografado,
         senhaCriptografada,
-        validade: null, // Will be determined by actual certificate parsing if available
+        validade: certDetails?.validade || null,
+        cnpjCpf: certDetails?.cnpjCpf || null,
+        razaoSocial: certDetails?.razaoSocial || null,
         ativo: true,
         ambiente,
         uf: uf.toUpperCase(),
@@ -231,7 +252,7 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error) {
-    console.error('Erro ao upload certificado:', error);
+    logger.error('Erro ao upload certificado:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         success: false,
@@ -319,7 +340,7 @@ export async function DELETE(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Erro ao deletar certificado:', error);
+    logger.error('Erro ao deletar certificado:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         success: false,

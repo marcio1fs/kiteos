@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { requireAuth } from '@/lib/auth';
@@ -26,6 +27,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
     }
 
+    const userIdFilter = searchParams.get('userId');
+
     const where: Prisma.SaleWhereInput = {
       officeId,
       deleted: false,
@@ -35,10 +38,15 @@ export async function GET(request: NextRequest) {
       where.status = status;
     }
 
+    if (userIdFilter) {
+      where.userId = userIdFilter;
+    }
+
     if (search) {
       where.OR = [
         { number: { contains: search } },
         { client: { name: { contains: search } } },
+        { user: { name: { contains: search } } },
         { obs: { contains: search } },
       ];
     }
@@ -50,6 +58,9 @@ export async function GET(request: NextRequest) {
       include: {
         client: {
           select: { id: true, name: true, phone: true, cpfCnpj: true },
+        },
+        user: {
+          select: { id: true, name: true, email: true },
         },
         items: {
           where: { deleted: false },
@@ -72,7 +83,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error listing sales:', error);
+    logger.error('Error listing sales:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar vendas' },
       { status: 500 }
@@ -87,6 +98,8 @@ export async function POST(request: NextRequest) {
     const {
       officeId,
       clientId,
+      sellerId,
+      userId: bodyUserId,
       discount = 0,
       paymentMethod,
       obs,
@@ -105,6 +118,8 @@ export async function POST(request: NextRequest) {
     if (!auth.payload) {
       return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
     }
+
+    const targetUserId = sellerId || bodyUserId || auth.payload.userId;
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -154,8 +169,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Auto-generate sale number: A001, A002, ..., A999, B001, ...
-    const finalNumber = await generateNextNumber('sale');
+    // Auto-generate sale number: A001, A002, ..., A999, B001, ... — AUD-02 FIX: scoped to this office
+    const finalNumber = await generateNextNumber('sale', officeId);
 
     // Calculate totals from items
     let subtotal = 0;
@@ -173,6 +188,7 @@ export async function POST(request: NextRequest) {
         unitPrice: item.unitPrice,
         totalPrice,
         partId: item.partId || null,
+        officeId,
       };
     });
 
@@ -191,6 +207,15 @@ export async function POST(request: NextRequest) {
     // Determine status based on payment method
     const status = paymentMethod ? 'PAGA' : 'ABERTA';
 
+    // Fetch active cash session for current seller
+    const activeCashSession = await db.cashSession.findFirst({
+      where: {
+        officeId,
+        userId: auth.payload.userId,
+        status: 'ABERTO',
+      },
+    });
+
     // Create sale with items in a transaction
     const sale = await db.$transaction(async (tx) => {
       const newSale = await tx.sale.create({
@@ -203,6 +228,8 @@ export async function POST(request: NextRequest) {
           paidAt: paymentMethod ? new Date() : null,
           obs: obs || null,
           clientId: clientId || null,
+          userId: targetUserId,
+          cashSessionId: activeCashSession?.id || null,
           officeId,
           items: {
             create: processedItems,
@@ -210,6 +237,9 @@ export async function POST(request: NextRequest) {
         },
         include: {
           client: true,
+          user: {
+            select: { id: true, name: true, email: true },
+          },
           items: true,
         },
       });
@@ -287,7 +317,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: sale }, { status: 201 });
   } catch (error) {
-    console.error('Error creating sale:', error);
+    logger.error('Error creating sale:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao criar venda' },
       { status: 500 }

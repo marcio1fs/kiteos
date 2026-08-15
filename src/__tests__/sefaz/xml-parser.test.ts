@@ -68,15 +68,22 @@ describe('validateChave', () => {
 
 describe('validateCnpj', () => {
   it('deve aceitar CNPJ válido de 14 dígitos', () => {
-    expect(validateCnpj('12345678901234')).toBe(true)
+    expect(validateCnpj('11222333000181')).toBe(true)
+    expect(validateCnpj('00000000000191')).toBe(true)
   })
 
   it('deve aceitar CNPJ com formatação', () => {
-    expect(validateCnpj('12.345.678/0001-90')).toBe(true)
+    expect(validateCnpj('11.222.333/0001-81')).toBe(true)
+    expect(validateCnpj('00.000.000/0001-91')).toBe(true)
   })
 
   it('deve rejeitar CNPJ com menos de 14 dígitos', () => {
     expect(validateCnpj('1234567890')).toBe(false)
+  })
+
+  it('deve rejeitar CNPJ com dígitos verificadores inválidos', () => {
+    expect(validateCnpj('11222333000180')).toBe(false)
+    expect(validateCnpj('11111111111111')).toBe(false)
   })
 })
 

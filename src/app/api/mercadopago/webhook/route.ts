@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { decryptToken } from '@/lib/token-encryption';
@@ -13,11 +14,11 @@ function validateWebhookSignature(
   secret: string
 ): boolean {
   if (!secret) {
-    console.error('[MP Webhook] REJECTED: No webhook secret configured for this office');
+    logger.error('[MP Webhook] REJECTED: No webhook secret configured for this office');
     return false; // SECURITY FIX: Reject if no secret configured
   }
   if (!signature) {
-    console.error('[MP Webhook] REJECTED: No signature provided in request');
+    logger.error('[MP Webhook] REJECTED: No signature provided in request');
     return false; // SECURITY FIX: Reject if no signature provided
   }
 
@@ -35,7 +36,7 @@ function validateWebhookSignature(
   // SECURITY FIX: Validate timestamp freshness (reject if older than 5 minutes)
   const timestampMs = parseInt(ts, 10);
   if (isNaN(timestampMs) || Math.abs(Date.now() - timestampMs) > 5 * 60 * 1000) {
-    console.error('[MP Webhook] REJECTED: Timestamp too old or invalid (possible replay attack)');
+    logger.error('[MP Webhook] REJECTED: Timestamp too old or invalid (possible replay attack)');
     return false;
   }
 
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
     }
 
     // SECURITY FIX: Reduced logging — don't log full webhook payload
-    console.log('[MP Webhook] Received notification type:', body?.type, 'action:', body?.action);
+    logger.info('[MP Webhook] Received notification', { type: body?.type, action: body?.action });
 
     const { type, data, action } = body;
 
@@ -105,12 +106,12 @@ export async function POST(request: NextRequest) {
         if (decryptedWebhookSecret) {
           const isValid = validateWebhookSignature(rawBody, mpSignature, decryptedWebhookSecret);
           if (!isValid) {
-            console.warn('[MP Webhook] Invalid signature for office:', office.id);
+            logger.warn('[MP Webhook] Invalid signature for office', { officeId: office.id });
             continue;
           }
         } else {
           // SECURITY FIX: Reject if no webhook secret is configured
-          console.warn('[MP Webhook] No webhook secret configured for office:', office.id, '- SKIPPING');
+          logger.warn('[MP Webhook] No webhook secret configured for office - SKIPPING', { officeId: office.id });
           continue;
         }
 
@@ -166,7 +167,7 @@ export async function POST(request: NextRequest) {
               },
             });
             if (existingEntry) {
-              console.log('[MP Webhook] Payment already processed for sale:', sale.number, '- skipping');
+              logger.info('[MP Webhook] Payment already processed for sale - skipping', { saleNumber: sale.number });
               break;
             }
 
@@ -273,7 +274,7 @@ export async function POST(request: NextRequest) {
           // Found the right office, no need to continue
           break;
         } catch (fetchError) {
-          console.error('[MP Webhook] Error fetching payment details:', fetchError);
+          logger.error('[MP Webhook] Error fetching payment details', { fetchError: fetchError instanceof Error ? fetchError.message : String(fetchError) });
           continue;
         }
       }
@@ -282,7 +283,7 @@ export async function POST(request: NextRequest) {
     // Always return 200 to MP
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[MP Webhook] Error:', error);
+    logger.error('[MP Webhook] Error', { error: error instanceof Error ? error.message : String(error) });
     // SECURITY FIX: Return 500 on genuine server errors so MP retries
     return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500 });
   }

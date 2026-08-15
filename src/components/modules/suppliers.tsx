@@ -181,6 +181,7 @@ function SupplierFormDialog({
   }, [initialData, open])
 
   /** Busca automática por CNPJ na BrasilAPI */
+  /** Busca automática por CNPJ via API com fallback multisserviço */
   const handleLookupCNPJ = async () => {
     const digits = form.cnpj.replace(/\D/g, '')
     if (digits.length !== 14) return
@@ -193,18 +194,18 @@ function SupplierFormDialog({
         const d = res.data
         setForm(prev => ({
           ...prev,
-          razaoSocial: prev.razaoSocial || d.razaoSocial || '',
-          nomeFantasia: prev.nomeFantasia || d.nomeFantasia || '',
-          email: prev.email || d.email || '',
-          phone: prev.phone || (d.telefone ? (() => {
+          razaoSocial: d.razaoSocial || prev.razaoSocial || '',
+          nomeFantasia: d.nomeFantasia || prev.nomeFantasia || '',
+          email: d.email || prev.email || '',
+          phone: d.telefone ? (() => {
             const ph = d.telefone.replace(/\D/g, '')
             return ph.length >= 10 ? `(${ph.slice(0,2)}) ${ph.slice(2,7)}-${ph.slice(7,11)}` : d.telefone
-          })() : ''),
-          address: prev.address || d.address || '',
-          city: prev.city || d.city || '',
-          state: prev.state || d.state || '',
-          zipCode: prev.zipCode || d.zipCode || '',
-          ie: prev.ie || d.ie || '',
+          })() : prev.phone,
+          address: d.address || prev.address || '',
+          city: d.city || prev.city || '',
+          state: d.state || prev.state || '',
+          zipCode: d.zipCode || prev.zipCode || '',
+          ie: d.ie || prev.ie || '',
         }))
         setLookupSuccess('CNPJ')
       } else if (!res.success) {

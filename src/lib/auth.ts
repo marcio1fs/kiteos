@@ -27,6 +27,8 @@ export interface TokenPayload {
   userId: string;
   role: string;
   officeId: string;
+  iat?: number;
+  exp?: number;
   // SECURITY FIX: Removed email from JWT payload (PII exposure)
   // Email can be fetched from DB via /api/auth/me when needed
 }
@@ -113,6 +115,12 @@ export function getTokenFromHeaders(headers: Headers): string | null {
   return auth;
 }
 
+export function getTokenFromCookies(cookies: string | null): string | null {
+  if (!cookies) return null;
+  const match = cookies.match(/(?:^|;\s*)kiteos_token=([^;]*)/);
+  return match ? match[1] : null;
+}
+
 // ============================================================================
 // SECURITY FIX: Removed header-injection trust pattern
 // Previously, x-user-id/x-user-email/x-user-role/x-office-id headers
@@ -121,8 +129,17 @@ export function getTokenFromHeaders(headers: Headers): string | null {
 // Now ALWAYS verifies the JWT token directly
 // ============================================================================
 export async function getAuthFromRequest(request: Request): Promise<TokenPayload | null> {
-  // Always verify from JWT token — never trust headers directly
-  const token = getTokenFromHeaders(request.headers);
+  // Try to get token from cookies first, fallback to header
+  let token = null;
+  const cookieHeader = request.headers.get('cookie');
+  if (cookieHeader) {
+    token = getTokenFromCookies(cookieHeader);
+  }
+  
+  if (!token) {
+    token = getTokenFromHeaders(request.headers);
+  }
+  
   if (!token) return null;
   return await verifyToken(token);
 }
@@ -155,7 +172,7 @@ export async function requireAuth(
   }
 
   // SECURITY FIX: Check token blacklist (for GDPR deletion / session revocation)
-  if (await isTokenBlacklisted(payload.userId)) {
+  if (await isTokenBlacklisted(payload.userId, payload.iat)) {
     return { payload: null, error: { status: 401, message: 'Sessão revogada. Faça login novamente.' } };
   }
 
@@ -180,11 +197,9 @@ export async function requireAuth(
  */
 export function validatePasswordStrength(password: string): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
-  if (password.length < 8) errors.push('Senha deve ter no mínimo 8 caracteres');
-  if (!/[A-Z]/.test(password)) errors.push('Senha deve conter ao menos uma letra maiúscula');
-  if (!/[a-z]/.test(password)) errors.push('Senha deve conter ao menos uma letra minúscula');
+  if (password.length < 6) errors.push('Senha deve ter no mínimo 6 caracteres');
+  if (!/[a-zA-Z]/.test(password)) errors.push('Senha deve conter ao menos uma letra');
   if (!/[0-9]/.test(password)) errors.push('Senha deve conter ao menos um número');
-  if (!/[!@#$%^&*()_+\-=[\]{}|;:\'",.<>?/`~]/.test(password)) errors.push('Senha deve conter ao menos um caractere especial');
   return { valid: errors.length === 0, errors };
 }
 

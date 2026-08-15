@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { consultaStatusServico, type Ambiente } from '@/lib/sefaz'
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error checking SEFAZ status:', error)
+    logger.error('Error checking SEFAZ status:', { error: error instanceof Error ? error.message : String(error) })
     return NextResponse.json(
       { success: false, errors: ['Erro ao verificar status SEFAZ'] },
       { status: 500 }

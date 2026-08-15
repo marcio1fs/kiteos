@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/table'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Upload,
   FileText,
@@ -53,6 +54,14 @@ import {
   Loader2,
   Send,
   Globe,
+  Calculator,
+  ShieldCheck,
+  Percent,
+  BookOpen,
+  Layers,
+  ArrowUpRight,
+  ArrowDownLeft,
+  FileSpreadsheet,
 } from 'lucide-react'
 import { ClientInvoiceDoc, type ClientInvoiceData } from '@/components/modules/client-invoice-doc'
 import { SefazModule } from '@/components/modules/sefaz'
@@ -141,8 +150,11 @@ const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'secon
   PAGA: { label: 'Paga', variant: 'secondary', className: 'bg-green-100 text-green-800 hover:bg-green-100' },
 }
 
-function formatCurrency(value: number) {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+function formatCurrency(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return 'R$ 0,00'
+  const num = typeof value === 'number' ? value : parseFloat(String(value))
+  if (isNaN(num)) return 'R$ 0,00'
+  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
 function formatDate(dateStr: string | null) {
@@ -194,22 +206,131 @@ export function NFeModule() {
   const [manualOpen, setManualOpen] = useState(false)
   const [manualSaving, setManualSaving] = useState(false)
   const [manualForm, setManualForm] = useState({
-    chave: '', numero: '', serie: '1', tipoOperacao: 'ENTRADA',
+    chave: '', numero: '', serie: '1', tipoOperacao: 'ENTRADA', tipoDocumento: 'NFE',
     dataEmissao: new Date().toISOString().split('T')[0],
     supplierCnpj: '', supplierRazaoSocial: '',
     frete: 0, seguro: 0, desconto: 0, observacao: '',
   })
   const [manualItems, setManualItems] = useState<Array<{
-    sku: string; descricao: string; ncm: string; cfop: string;
+    partId?: string; sku: string; descricao: string; ncm: string; cfop: string;
     quantidade: number; unidade: string; valorUnitario: number; valorTotal: number;
     baseIcms: number; valorIcms: number; valorIpi: number; valorPis: number; valorCofins: number;
     lote: string; localizacao: string;
   }>>([
-    { sku: '', descricao: '', ncm: '', cfop: '', quantidade: 1, unidade: 'UN', valorUnitario: 0, valorTotal: 0, baseIcms: 0, valorIcms: 0, valorIpi: 0, valorPis: 0, valorCofins: 0, lote: '', localizacao: '' },
+    { partId: '', sku: '', descricao: '', ncm: '', cfop: '1102', quantidade: 1, unidade: 'UN', valorUnitario: 0, valorTotal: 0, baseIcms: 0, valorIcms: 0, valorIpi: 0, valorPis: 0, valorCofins: 0, lote: '', localizacao: '' },
   ])
+
+  // ---- Product Search Modal for Manual Entry / Receipt Grid ----
+  const [productSearchOpen, setProductSearchOpen] = useState(false)
+  const [productSearchQuery, setProductSearchQuery] = useState('')
+  const [targetItemIndex, setTargetItemIndex] = useState<number | null>(null)
+  const [registeredParts, setRegisteredParts] = useState<Array<{
+    id: string
+    sku: string
+    description: string
+    ncm?: string | null
+    cfop?: string | null
+    unit: string
+    quantity: number
+    costPrice: number
+    salePrice: number
+    location?: string | null
+  }>>([])
+  const [loadingParts, setLoadingParts] = useState(false)
+
+  const openProductSearchModal = async (targetIndex: number | null = null) => {
+    setTargetItemIndex(targetIndex)
+    setProductSearchQuery('')
+    setProductSearchOpen(true)
+    if (officeId) {
+      setLoadingParts(true)
+      try {
+        const res = await apiFetch(`/api/parts?officeId=${officeId}&limit=200`)
+        if (res.success && Array.isArray(res.data)) {
+          setRegisteredParts(res.data)
+        }
+      } catch {
+        // Silently handle
+      } finally {
+        setLoadingParts(false)
+      }
+    }
+  }
+
+  const selectProductForManualEntry = (part: {
+    id: string
+    sku: string
+    description: string
+    ncm?: string | null
+    cfop?: string | null
+    unit: string
+    costPrice: number
+  }) => {
+    const cost = Number(part.costPrice || 0)
+    if (targetItemIndex !== null && targetItemIndex >= 0 && targetItemIndex < manualItems.length) {
+      setManualItems(prev => {
+        const updated = [...prev]
+        const currentQty = updated[targetItemIndex].quantidade || 1
+        updated[targetItemIndex] = {
+          ...updated[targetItemIndex],
+          partId: part.id,
+          sku: part.sku || '',
+          descricao: part.description || '',
+          ncm: part.ncm || '',
+          cfop: part.cfop || '1102',
+          unidade: part.unit || 'UN',
+          valorUnitario: cost,
+          valorTotal: currentQty * cost,
+        }
+        return updated
+      })
+    } else {
+      setManualItems(prev => [
+        ...prev,
+        {
+          partId: part.id,
+          sku: part.sku || '',
+          descricao: part.description || '',
+          ncm: part.ncm || '',
+          cfop: part.cfop || '1102',
+          quantidade: 1,
+          unidade: part.unit || 'UN',
+          valorUnitario: cost,
+          valorTotal: cost,
+          baseIcms: 0,
+          valorIcms: 0,
+          valorIpi: 0,
+          valorPis: 0,
+          valorCofins: 0,
+          lote: '',
+          localizacao: '',
+        },
+      ])
+    }
+    setProductSearchOpen(false)
+  }
 
   // Alert state
   const [alerts, setAlerts] = useState<Array<{ type: 'error' | 'warning' | 'info'; message: string }>>([])
+
+  // ---- Pricing & Profit Margin Modal state ----
+  const [pricingOpen, setPricingOpen] = useState(false)
+  const [pricingInvoice, setPricingInvoice] = useState<Invoice | null>(null)
+  const [pricingItems, setPricingItems] = useState<Array<{
+    itemId: string
+    partId: string | null
+    sku: string
+    descricao: string
+    unidade: string
+    quantidade: number
+    custoAtual: number
+    precoVendaAtual: number
+    margemLucroPct: number
+    novoPrecoVenda: number
+    lucroBrutoUnit: number
+  }>>([])
+  const [globalMarginInput, setGlobalMarginInput] = useState<string>('40')
+  const [savingPricing, setSavingPricing] = useState(false)
 
   // Client Invoices (Notas Emitidas) state
   const [clientInvoices, setClientInvoices] = useState<Array<ClientInvoiceData>>([])
@@ -237,6 +358,88 @@ export function NFeModule() {
   const [newPartForItem, setNewPartForItem] = useState<string | null>(null)
   const [newPartForm, setNewPartForm] = useState({ sku: '', description: '', ncm: '', unit: 'UN', costPrice: 0, salePrice: 0, minQuantity: 0 })
   const [newPartSaving, setNewPartSaving] = useState(false)
+
+  // ---- Tax Rules State ----
+  const [taxRules, setTaxRules] = useState<Array<{
+    id: string
+    ncm: string
+    cfop: string
+    cst: string | null
+    csosn: string | null
+    aliqIcms: number
+    aliqIpi: number
+    aliqPis: number
+    aliqCofins: number
+    state: string
+    active: boolean
+  }>>([])
+  const [taxRulesLoading, setTaxRulesLoading] = useState(false)
+  const [taxRuleSearch, setTaxRuleSearch] = useState('')
+  const [newTaxRuleOpen, setNewTaxRuleOpen] = useState(false)
+  const [newTaxRuleSaving, setNewTaxRuleSaving] = useState(false)
+  const [newTaxRuleForm, setNewTaxRuleForm] = useState({
+    ncm: '',
+    cfop: '5102',
+    cst: '',
+    csosn: '102',
+    aliqIcms: 18,
+    aliqIpi: 0,
+    aliqPis: 1.65,
+    aliqCofins: 7.6,
+    state: 'BA',
+  })
+
+  // ---- Tax Simulator State ----
+  const [simType, setSimType] = useState<'PRODUTO' | 'SERVICO'>('PRODUTO')
+  const [simValor, setSimValor] = useState<number>(1000)
+  const [simAliqIcms, setSimAliqIcms] = useState<number>(18)
+  const [simAliqIpi, setSimAliqIpi] = useState<number>(0)
+  const [simAliqPis, setSimAliqPis] = useState<number>(1.65)
+  const [simAliqCofins, setSimAliqCofins] = useState<number>(7.6)
+  const [simAliqIssqn, setSimAliqIssqn] = useState<number>(5)
+
+  const fetchTaxRules = useCallback(async () => {
+    if (!officeId) return
+    setTaxRulesLoading(true)
+    try {
+      const res = await apiFetch(`/api/tax-rules?limit=100`)
+      if (res.success && res.data?.rules) {
+        setTaxRules(res.data.rules)
+      }
+    } catch {
+      setAlerts(prev => [...prev, { type: 'error', message: 'Erro ao carregar regras fiscais' }])
+    } finally {
+      setTaxRulesLoading(false)
+    }
+  }, [officeId])
+
+  const handleCreateTaxRule = async () => {
+    if (!officeId) return
+    if (!newTaxRuleForm.ncm || !newTaxRuleForm.cfop) {
+      setAlerts(prev => [...prev, { type: 'error', message: 'NCM e CFOP são obrigatórios' }])
+      return
+    }
+    setNewTaxRuleSaving(true)
+    try {
+      const res = await apiFetch('/api/tax-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTaxRuleForm),
+      })
+      if (res.success) {
+        setAlerts(prev => [...prev, { type: 'info', message: 'Regra fiscal criada com sucesso!' }])
+        setNewTaxRuleOpen(false)
+        setNewTaxRuleForm({ ncm: '', cfop: '5102', cst: '', csosn: '102', aliqIcms: 18, aliqIpi: 0, aliqPis: 1.65, aliqCofins: 7.6, state: 'BA' })
+        fetchTaxRules()
+      } else {
+        setAlerts(prev => [...prev, { type: 'error', message: res.errors?.join(', ') || 'Erro ao criar regra fiscal' }])
+      }
+    } catch {
+      setAlerts(prev => [...prev, { type: 'error', message: 'Erro de conexão ao salvar regra fiscal' }])
+    } finally {
+      setNewTaxRuleSaving(false)
+    }
+  }
 
   // ---- Part Search for Item Mapping ----
   const searchPartsForItem = useCallback(async (itemId: string, term: string) => {
@@ -535,7 +738,10 @@ export function NFeModule() {
         setAlerts(prev => [...prev, { type: 'info', message: 'Estoque atualizado com sucesso!' }])
         fetchInvoices()
         const detail = await apiFetch(`/api/nfe/${selectedInvoice.id}?officeId=${officeId}`)
-        if (detail.success) setSelectedInvoice(detail.data)
+        if (detail.success) {
+          setSelectedInvoice(detail.data)
+          openPricingModal(detail.data)
+        }
       } else {
         setAlerts(prev => [...prev, { type: 'error', message: res.errors?.join(', ') || 'Erro ao atualizar estoque' }])
       }
@@ -543,6 +749,153 @@ export function NFeModule() {
       setAlerts(prev => [...prev, { type: 'error', message: 'Erro de conexão ao atualizar estoque' }])
     } finally {
       setUpdatingStock(false)
+    }
+  }
+
+  // ---- Pricing & Margin Handlers ----
+  const openPricingModal = async (invoice: Invoice) => {
+    if (!officeId) return
+    setPricingInvoice(invoice)
+    setSavingPricing(false)
+    setGlobalMarginInput('40')
+
+    try {
+      const res = await apiFetch(`/api/nfe/${invoice.id}?officeId=${officeId}`)
+      const fullInvoice: Invoice = res.success ? res.data : invoice
+
+      const partsRes = await apiFetch(`/api/parts?officeId=${officeId}&limit=500`)
+      const partsList: Array<{ id: string; costPrice: number; salePrice: number; sku: string; description: string }> =
+        partsRes.success && Array.isArray(partsRes.data) ? partsRes.data : []
+
+      const itemsForPricing = fullInvoice.items.map((item: InvoiceItem) => {
+        const linkedPart = item.partId ? partsList.find(p => p.id === item.partId) : null
+        const custoUnit = Number(item.valorUnitario || 0)
+        const precoVendaAtual = linkedPart ? Number(linkedPart.salePrice || 0) : (custoUnit > 0 ? Math.round(custoUnit * 1.4 * 100) / 100 : 0)
+
+        let initialMarginPct = 40
+        if (custoUnit > 0 && precoVendaAtual > custoUnit) {
+          initialMarginPct = Math.round(((precoVendaAtual - custoUnit) / custoUnit) * 100 * 10) / 10
+        }
+
+        const novoPrecoVenda = Math.round(custoUnit * (1 + initialMarginPct / 100) * 100) / 100
+        const lucroBrutoUnit = Math.round((novoPrecoVenda - custoUnit) * 100) / 100
+
+        return {
+          itemId: item.id,
+          partId: item.partId || null,
+          sku: item.sku || linkedPart?.sku || 'N/A',
+          descricao: item.descricao || linkedPart?.description || 'Item sem descrição',
+          unidade: item.unidade || 'UN',
+          quantidade: item.quantidade,
+          custoAtual: custoUnit,
+          precoVendaAtual,
+          margemLucroPct: initialMarginPct,
+          novoPrecoVenda,
+          lucroBrutoUnit,
+        }
+      })
+
+      setPricingItems(itemsForPricing)
+      setPricingOpen(true)
+    } catch {
+      setAlerts(prev => [...prev, { type: 'error', message: 'Erro ao carregar dados para precificação.' }])
+    }
+  }
+
+  const applyGlobalMargin = (marginValue: number) => {
+    setPricingItems(prev =>
+      prev.map(item => {
+        const custo = item.custoAtual
+        const margem = Math.max(0, marginValue)
+        const novoPreco = Math.round(custo * (1 + margem / 100) * 100) / 100
+        const lucro = Math.round((novoPreco - custo) * 100) / 100
+        return {
+          ...item,
+          margemLucroPct: margem,
+          novoPrecoVenda: novoPreco,
+          lucroBrutoUnit: lucro,
+        }
+      })
+    )
+  }
+
+  const updateItemMarginPct = (index: number, newMargin: number) => {
+    setPricingItems(prev => {
+      const updated = [...prev]
+      const item = updated[index]
+      const custo = item.custoAtual
+      const margem = Math.max(0, newMargin)
+      const novoPreco = Math.round(custo * (1 + margem / 100) * 100) / 100
+      const lucro = Math.round((novoPreco - custo) * 100) / 100
+
+      updated[index] = {
+        ...item,
+        margemLucroPct: margem,
+        novoPrecoVenda: novoPreco,
+        lucroBrutoUnit: lucro,
+      }
+      return updated
+    })
+  }
+
+  const updateItemSalePrice = (index: number, newPrice: number) => {
+    setPricingItems(prev => {
+      const updated = [...prev]
+      const item = updated[index]
+      const custo = item.custoAtual
+      const preco = Math.max(0, newPrice)
+      const margem = custo > 0 ? Math.round(((preco - custo) / custo) * 100 * 10) / 10 : 0
+      const lucro = Math.round((preco - custo) * 100) / 100
+
+      updated[index] = {
+        ...item,
+        margemLucroPct: margem,
+        novoPrecoVenda: preco,
+        lucroBrutoUnit: lucro,
+      }
+      return updated
+    })
+  }
+
+  const handleSavePricing = async () => {
+    if (!officeId || !pricingInvoice) return
+    setSavingPricing(true)
+    try {
+      const itemsToUpdate = pricingItems
+        .filter(item => item.partId && item.novoPrecoVenda > 0)
+        .map(item => ({
+          partId: item.partId,
+          costPrice: item.custoAtual,
+          salePrice: item.novoPrecoVenda,
+        }))
+
+      if (itemsToUpdate.length === 0) {
+        setAlerts(prev => [...prev, { type: 'warning', message: 'Nenhum item vinculado a um produto do estoque para atualizar preço.' }])
+        setPricingOpen(false)
+        return
+      }
+
+      const res = await apiFetch('/api/parts/batch-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          officeId,
+          invoiceId: pricingInvoice.id,
+          items: itemsToUpdate,
+        }),
+      })
+
+      if (res.success) {
+        setAlerts(prev => [...prev, { type: 'info', message: 'Preços de venda e margens de lucro atualizados no estoque!' }])
+        setPricingOpen(false)
+        fetchInvoices()
+      } else {
+        setAlerts(prev => [...prev, { type: 'error', message: res.errors?.join(', ') || 'Erro ao atualizar preços de venda.' }])
+      }
+    } catch {
+      setAlerts(prev => [...prev, { type: 'error', message: 'Erro de conexão ao salvar precificação.' }])
+    } finally {
+      setSavingPricing(false)
     }
   }
 
@@ -624,16 +977,16 @@ export function NFeModule() {
 
   const resetManualForm = () => {
     setManualForm({
-      chave: '', numero: '', serie: '1', tipoOperacao: 'ENTRADA',
+      chave: '', numero: '', serie: '1', tipoOperacao: 'ENTRADA', tipoDocumento: 'NFE',
       dataEmissao: new Date().toISOString().split('T')[0],
       supplierCnpj: '', supplierRazaoSocial: '',
       frete: 0, seguro: 0, desconto: 0, observacao: '',
     })
-    setManualItems([{ sku: '', descricao: '', ncm: '', cfop: '', quantidade: 1, unidade: 'UN', valorUnitario: 0, valorTotal: 0, baseIcms: 0, valorIcms: 0, valorIpi: 0, valorPis: 0, valorCofins: 0, lote: '', localizacao: '' }])
+    setManualItems([{ partId: '', sku: '', descricao: '', ncm: '', cfop: '1102', quantidade: 1, unidade: 'UN', valorUnitario: 0, valorTotal: 0, baseIcms: 0, valorIcms: 0, valorIpi: 0, valorPis: 0, valorCofins: 0, lote: '', localizacao: '' }])
   }
 
   const addManualItem = () => {
-    setManualItems(prev => [...prev, { sku: '', descricao: '', ncm: '', cfop: '', quantidade: 1, unidade: 'UN', valorUnitario: 0, valorTotal: 0, baseIcms: 0, valorIcms: 0, valorIpi: 0, valorPis: 0, valorCofins: 0, lote: '', localizacao: '' }])
+    setManualItems(prev => [...prev, { partId: '', sku: '', descricao: '', ncm: '', cfop: '1102', quantidade: 1, unidade: 'UN', valorUnitario: 0, valorTotal: 0, baseIcms: 0, valorIcms: 0, valorIpi: 0, valorPis: 0, valorCofins: 0, lote: '', localizacao: '' }])
   }
 
   const removeManualItem = (index: number) => {
@@ -752,17 +1105,91 @@ export function NFeModule() {
         ))}
       </div>
 
+      {/* Fiscal KPI Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-l-4 border-l-blue-500 bg-gradient-to-br from-white to-blue-50/30 shadow-sm overflow-hidden">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="min-w-0 flex-1 mr-2">
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider truncate">Notas de Entrada</p>
+              <h3 className="text-2xl font-bold text-zinc-900 mt-1">{invoices.length}</h3>
+              <p className="text-xs text-blue-600 font-medium mt-0.5 truncate">
+                {formatCurrency(invoices.reduce((s, i) => s + Number(i.totalNf || 0), 0))}
+              </p>
+            </div>
+            <div className="p-3 bg-blue-100/80 rounded-xl text-blue-600 shrink-0">
+              <ArrowDownLeft className="w-6 h-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-emerald-500 bg-gradient-to-br from-white to-emerald-50/30 shadow-sm overflow-hidden">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="min-w-0 flex-1 mr-2">
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider truncate">Notas Emitidas (Saída)</p>
+              <h3 className="text-2xl font-bold text-zinc-900 mt-1">{clientInvoices.length}</h3>
+              <p className="text-xs text-emerald-600 font-medium mt-0.5 truncate">
+                {formatCurrency(clientInvoices.reduce((s, i) => s + Number(i.totalAmount || 0), 0))}
+              </p>
+            </div>
+            <div className="p-3 bg-emerald-100/80 rounded-xl text-emerald-600 shrink-0">
+              <ArrowUpRight className="w-6 h-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-amber-500 bg-gradient-to-br from-white to-amber-50/30 shadow-sm overflow-hidden">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="min-w-0 flex-1 mr-2">
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider truncate">Impostos Escriturados</p>
+              <h3 className="text-2xl font-bold text-zinc-900 mt-1 truncate">
+                {formatCurrency(
+                  invoices.reduce((s, i) => s + Number(i.valorIcms || 0) + Number(i.valorIpi || 0) + Number(i.valorPis || 0) + Number(i.valorCofins || 0), 0) +
+                  clientInvoices.reduce((s, i) => s + Number(i.valorIcms || 0) + Number(i.valorIpi || 0) + Number(i.valorPis || 0) + Number(i.valorCofins || 0), 0)
+                )}
+              </h3>
+              <p className="text-xs text-amber-700 font-medium mt-0.5 truncate">ICMS / IPI / PIS / COFINS</p>
+            </div>
+            <div className="p-3 bg-amber-100/80 rounded-xl text-amber-700 shrink-0">
+              <Percent className="w-6 h-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-purple-500 bg-gradient-to-br from-white to-purple-50/30 shadow-sm overflow-hidden">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="min-w-0 flex-1 mr-2">
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider truncate">Pendências / Estoque</p>
+              <h3 className="text-2xl font-bold text-zinc-900 mt-1">{invoices.filter(i => i.status === 'IMPORTADA' || i.status === 'DIVERGENTE').length}</h3>
+              <p className="text-xs text-purple-600 font-medium mt-0.5 truncate">Aguardando Conferência</p>
+            </div>
+            <div className="p-3 bg-purple-100/80 rounded-xl text-purple-600 shrink-0">
+              <ClipboardCheck className="w-6 h-6" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Main Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v === 'emitidas') fetchClientInvoices() }}>
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="importar" className="gap-2">
-            <Upload className="w-4 h-4" /> Importar NF-e
+      <Tabs value={activeTab} onValueChange={(v) => {
+        setActiveTab(v);
+        if (v === 'emitidas') fetchClientInvoices();
+        if (v === 'regras-fiscais') fetchTaxRules();
+      }}>
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 h-auto p-1 bg-zinc-100">
+          <TabsTrigger value="importar" className="gap-2 py-2.5">
+            <Upload className="w-4 h-4" /> Importar / Entrada
           </TabsTrigger>
-          <TabsTrigger value="sefaz" className="gap-2">
-            <Globe className="w-4 h-4" /> SEFAZ
-          </TabsTrigger>
-          <TabsTrigger value="emitidas" className="gap-2">
+          <TabsTrigger value="emitidas" className="gap-2 py-2.5">
             <Send className="w-4 h-4" /> Notas Emitidas
+          </TabsTrigger>
+          <TabsTrigger value="sefaz" className="gap-2 py-2.5">
+            <Globe className="w-4 h-4" /> SEFAZ / Certificado
+          </TabsTrigger>
+          <TabsTrigger value="regras-fiscais" className="gap-2 py-2.5">
+            <ShieldCheck className="w-4 h-4" /> Regras Fiscais
+          </TabsTrigger>
+          <TabsTrigger value="simulador" className="gap-2 py-2.5">
+            <Calculator className="w-4 h-4" /> Simulador Fiscal
           </TabsTrigger>
         </TabsList>
 
@@ -947,6 +1374,9 @@ export function NFeModule() {
                             <Button size="sm" variant="ghost" onClick={() => openDetail(inv)} title="Ver detalhes">
                               <Eye className="w-4 h-4" />
                             </Button>
+                            <Button size="sm" variant="ghost" onClick={() => openPricingModal(inv)} className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800" title="Precificar Venda e Margem de Lucro">
+                              <DollarSign className="w-4 h-4" />
+                            </Button>
                             <Button size="sm" variant="ghost" onClick={() => handleValidate(inv.id)} disabled={validating} title="Validar XML">
                               {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                             </Button>
@@ -1052,7 +1482,424 @@ export function NFeModule() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* ===== TAB: Regras Fiscais ===== */}
+        <TabsContent value="regras-fiscais" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                  Regras Tributárias & Alíquotas por Estado / NCM
+                </CardTitle>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Gerencie as regras de cálculo de tributos (ICMS, IPI, PIS, COFINS) associadas à combinação NCM + CFOP + UF.
+                </p>
+              </div>
+              <Button
+                onClick={() => setNewTaxRuleOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1"
+              >
+                <Plus className="w-4 h-4" /> Nova Regra Fiscal
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                  <Input
+                    placeholder="Buscar por NCM, CFOP ou UF..."
+                    value={taxRuleSearch}
+                    onChange={(e) => setTaxRuleSearch(e.target.value)}
+                    className="pl-9 text-sm"
+                  />
+                </div>
+                <Button variant="outline" size="sm" onClick={fetchTaxRules} disabled={taxRulesLoading}>
+                  <RefreshCw className={`w-4 h-4 ${taxRulesLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+
+              {taxRulesLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+                </div>
+              ) : taxRules.length === 0 ? (
+                <div className="text-center py-12 text-zinc-500 text-sm">
+                  Nenhuma regra fiscal cadastrada. Clique em "Nova Regra Fiscal" para adicionar.
+                </div>
+              ) : (
+                <div className="border rounded-md overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-zinc-50">
+                        <TableHead>NCM</TableHead>
+                        <TableHead>CFOP</TableHead>
+                        <TableHead>UF</TableHead>
+                        <TableHead>CST / CSOSN</TableHead>
+                        <TableHead className="text-right">ICMS (%)</TableHead>
+                        <TableHead className="text-right">IPI (%)</TableHead>
+                        <TableHead className="text-right">PIS (%)</TableHead>
+                        <TableHead className="text-right">COFINS (%)</TableHead>
+                        <TableHead className="text-center">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {taxRules
+                        .filter(rule => {
+                          if (!taxRuleSearch.trim()) return true
+                          const q = taxRuleSearch.toLowerCase()
+                          return rule.ncm.toLowerCase().includes(q) || rule.cfop.toLowerCase().includes(q) || rule.state.toLowerCase().includes(q)
+                        })
+                        .map((rule) => (
+                          <TableRow key={rule.id} className="hover:bg-zinc-50">
+                            <TableCell className="font-mono text-xs font-bold text-zinc-900">{rule.ncm}</TableCell>
+                            <TableCell className="font-mono text-xs text-zinc-700">{rule.cfop}</TableCell>
+                            <TableCell className="font-bold text-xs text-zinc-800">{rule.state}</TableCell>
+                            <TableCell className="text-xs text-zinc-600">
+                              {rule.cst ? `CST ${rule.cst}` : rule.csosn ? `CSOSN ${rule.csosn}` : '—'}
+                            </TableCell>
+                            <TableCell className="text-right font-medium text-xs text-blue-700">{rule.aliqIcms}%</TableCell>
+                            <TableCell className="text-right font-medium text-xs text-purple-700">{rule.aliqIpi}%</TableCell>
+                            <TableCell className="text-right font-medium text-xs text-amber-700">{rule.aliqPis}%</TableCell>
+                            <TableCell className="text-right font-medium text-xs text-emerald-700">{rule.aliqCofins}%</TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant="outline" className={rule.active ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-zinc-100 text-zinc-600'}>
+                                {rule.active ? 'Ativa' : 'Inativa'}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ===== TAB: Simulador Fiscal ===== */}
+        <TabsContent value="simulador" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Calculator className="w-5 h-5 text-emerald-600" />
+                Simulador & Calculadora Tributária Interativa
+              </CardTitle>
+              <p className="text-xs text-zinc-500">
+                Simule a carga tributária incidente sobre operações de Venda de Produtos ou Serviços de Oficina antes de emitir a Nota Fiscal.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Inputs Column */}
+                <div className="space-y-4 bg-zinc-50 p-4 rounded-xl border border-zinc-200">
+                  <h4 className="font-bold text-sm text-zinc-900 flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-emerald-600" /> Parâmetros da Operação
+                  </h4>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Tipo de Operação</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={simType === 'PRODUTO' ? 'default' : 'outline'}
+                        className={simType === 'PRODUTO' ? 'bg-emerald-600 text-white' : ''}
+                        onClick={() => setSimType('PRODUTO')}
+                      >
+                        Venda de Peças (NF-e)
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={simType === 'SERVICO' ? 'default' : 'outline'}
+                        className={simType === 'SERVICO' ? 'bg-emerald-600 text-white' : ''}
+                        onClick={() => setSimType('SERVICO')}
+                      >
+                        Serviço (NFS-e)
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Valor Bruto da Operação (R$) *</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      value={simValor}
+                      onChange={(e) => setSimValor(parseFloat(e.target.value) || 0)}
+                      className="text-base font-bold text-emerald-800 bg-white"
+                    />
+                  </div>
+
+                  {simType === 'PRODUTO' ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">ICMS (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={simAliqIcms}
+                            onChange={(e) => setSimAliqIcms(parseFloat(e.target.value) || 0)}
+                            className="text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">IPI (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={simAliqIpi}
+                            onChange={(e) => setSimAliqIpi(parseFloat(e.target.value) || 0)}
+                            className="text-xs bg-white"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">PIS (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={simAliqPis}
+                            onChange={(e) => setSimAliqPis(parseFloat(e.target.value) || 0)}
+                            className="text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">COFINS (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={simAliqCofins}
+                            onChange={(e) => setSimAliqCofins(parseFloat(e.target.value) || 0)}
+                            className="text-xs bg-white"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="space-y-1">
+                        <Label className="text-xs">ISSQN Municipal (%)</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={simAliqIssqn}
+                          onChange={(e) => setSimAliqIssqn(parseFloat(e.target.value) || 0)}
+                          className="text-xs bg-white"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">PIS (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={simAliqPis}
+                            onChange={(e) => setSimAliqPis(parseFloat(e.target.value) || 0)}
+                            className="text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">COFINS (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={simAliqCofins}
+                            onChange={(e) => setSimAliqCofins(parseFloat(e.target.value) || 0)}
+                            className="text-xs bg-white"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Calculation Results Column */}
+                <div className="lg:col-span-2 space-y-4">
+                  {(() => {
+                    const icmsVal = simType === 'PRODUTO' ? simValor * (simAliqIcms / 100) : 0
+                    const ipiVal = simType === 'PRODUTO' ? simValor * (simAliqIpi / 100) : 0
+                    const pisVal = simValor * (simAliqPis / 100)
+                    const cofinsVal = simValor * (simAliqCofins / 100)
+                    const issqnVal = simType === 'SERVICO' ? simValor * (simAliqIssqn / 100) : 0
+                    const totalImpostosSim = icmsVal + ipiVal + pisVal + cofinsVal + issqnVal
+                    const liquidaVal = simValor - totalImpostosSim
+                    const cargaEfetivaPct = simValor > 0 ? (totalImpostosSim / simValor) * 100 : 0
+
+                    return (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl">
+                            <p className="text-xs font-semibold text-emerald-800 uppercase">Valor Bruto Operação</p>
+                            <h3 className="text-2xl font-bold text-emerald-900 mt-1">{formatCurrency(simValor)}</h3>
+                          </div>
+                          <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl">
+                            <p className="text-xs font-semibold text-amber-800 uppercase">Total Tributos (R$)</p>
+                            <h3 className="text-2xl font-bold text-amber-900 mt-1">{formatCurrency(totalImpostosSim)}</h3>
+                            <p className="text-xs text-amber-700 font-semibold mt-0.5">{cargaEfetivaPct.toFixed(2)}% da operação</p>
+                          </div>
+                          <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl">
+                            <p className="text-xs font-semibold text-blue-800 uppercase">Valor Líquido pós Impostos</p>
+                            <h3 className="text-2xl font-bold text-blue-900 mt-1">{formatCurrency(liquidaVal)}</h3>
+                          </div>
+                        </div>
+
+                        {/* Detailed Tax Breakdown */}
+                        <div className="border rounded-xl p-4 space-y-3 bg-white">
+                          <h4 className="font-bold text-sm text-zinc-900">Detalhamento dos Tributos Incidentes</h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            {simType === 'PRODUTO' ? (
+                              <>
+                                <div className="p-3 bg-zinc-50 rounded-lg border">
+                                  <span className="text-zinc-500 block">ICMS ({simAliqIcms}%)</span>
+                                  <span className="text-sm font-bold text-blue-700 mt-0.5 block">{formatCurrency(icmsVal)}</span>
+                                </div>
+                                <div className="p-3 bg-zinc-50 rounded-lg border">
+                                  <span className="text-zinc-500 block">IPI ({simAliqIpi}%)</span>
+                                  <span className="text-sm font-bold text-purple-700 mt-0.5 block">{formatCurrency(ipiVal)}</span>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="p-3 bg-zinc-50 rounded-lg border">
+                                <span className="text-zinc-500 block">ISSQN Municipal ({simAliqIssqn}%)</span>
+                                <span className="text-sm font-bold text-emerald-700 mt-0.5 block">{formatCurrency(issqnVal)}</span>
+                              </div>
+                            )}
+                            <div className="p-3 bg-zinc-50 rounded-lg border">
+                              <span className="text-zinc-500 block">PIS ({simAliqPis}%)</span>
+                              <span className="text-sm font-bold text-amber-700 mt-0.5 block">{formatCurrency(pisVal)}</span>
+                            </div>
+                            <div className="p-3 bg-zinc-50 rounded-lg border">
+                              <span className="text-zinc-500 block">COFINS ({simAliqCofins}%)</span>
+                              <span className="text-sm font-bold text-emerald-700 mt-0.5 block">{formatCurrency(cofinsVal)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* New Tax Rule Dialog */}
+      <Dialog open={newTaxRuleOpen} onOpenChange={setNewTaxRuleOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-emerald-600" />
+              Nova Regra Fiscal
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">NCM (8 dígitos) *</Label>
+                <Input
+                  value={newTaxRuleForm.ncm}
+                  onChange={(e) => setNewTaxRuleForm(prev => ({ ...prev, ncm: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
+                  placeholder="Ex: 87082999"
+                  className="h-9 text-sm font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">CFOP (4 dígitos) *</Label>
+                <Input
+                  value={newTaxRuleForm.cfop}
+                  onChange={(e) => setNewTaxRuleForm(prev => ({ ...prev, cfop: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                  placeholder="Ex: 5102"
+                  className="h-9 text-sm font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Estado / UF *</Label>
+                <Input
+                  value={newTaxRuleForm.state}
+                  onChange={(e) => setNewTaxRuleForm(prev => ({ ...prev, state: e.target.value.toUpperCase().slice(0, 2) }))}
+                  placeholder="BA"
+                  className="h-9 text-sm uppercase"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">CSOSN / CST</Label>
+                <Input
+                  value={newTaxRuleForm.csosn}
+                  onChange={(e) => setNewTaxRuleForm(prev => ({ ...prev, csosn: e.target.value }))}
+                  placeholder="102"
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Alíquota ICMS (%)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={newTaxRuleForm.aliqIcms}
+                  onChange={(e) => setNewTaxRuleForm(prev => ({ ...prev, aliqIcms: parseFloat(e.target.value) || 0 }))}
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Alíquota IPI (%)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={newTaxRuleForm.aliqIpi}
+                  onChange={(e) => setNewTaxRuleForm(prev => ({ ...prev, aliqIpi: parseFloat(e.target.value) || 0 }))}
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Alíquota PIS (%)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newTaxRuleForm.aliqPis}
+                  onChange={(e) => setNewTaxRuleForm(prev => ({ ...prev, aliqPis: parseFloat(e.target.value) || 0 }))}
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Alíquota COFINS (%)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newTaxRuleForm.aliqCofins}
+                  onChange={(e) => setNewTaxRuleForm(prev => ({ ...prev, aliqCofins: parseFloat(e.target.value) || 0 }))}
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" onClick={() => setNewTaxRuleOpen(false)}>Cancelar</Button>
+            <Button
+              onClick={handleCreateTaxRule}
+              disabled={newTaxRuleSaving || !newTaxRuleForm.ncm || !newTaxRuleForm.cfop}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+            >
+              {newTaxRuleSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Salvar Regra Fiscal
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Section 3: Detail Dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
@@ -1386,6 +2233,14 @@ export function NFeModule() {
                 </Button>
                 <Button
                   variant="outline"
+                  onClick={() => openPricingModal(selectedInvoice)}
+                  className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 font-semibold"
+                >
+                  <DollarSign className="w-4 h-4 mr-1 text-emerald-600" />
+                  Precificar Venda / Margens
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={handleGenerateTitulo}
                   disabled={selectedInvoice.status === 'PAGA' || generatingTitulo}
                 >
@@ -1484,7 +2339,7 @@ export function NFeModule() {
 
       {/* New Part Dialog - Create part from NF-e item */}
       <Dialog open={newPartDialogOpen} onOpenChange={setNewPartDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-[95vw] md:max-w-2xl lg:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Package className="w-5 h-5 text-emerald-600" />
@@ -1594,16 +2449,16 @@ export function NFeModule() {
 
       {/* Manual NF Dialog */}
       <Dialog open={manualOpen} onOpenChange={setManualOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] lg:max-w-6xl xl:max-w-7xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Plus className="w-5 h-5 text-emerald-600" />
-              Nova NF-e Manual
+              Nova NF-e / Recibo de Compra Manual
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-6">
             {/* Header fields */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               <div className="space-y-1">
                 <Label>Número NF *</Label>
                 <Input value={manualForm.numero} onChange={(e) => setManualForm(p => ({ ...p, numero: e.target.value }))} placeholder="001" />
@@ -1658,17 +2513,25 @@ export function NFeModule() {
 
             {/* Items grid */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-base font-semibold">Itens da NF-e</Label>
-                <Button size="sm" variant="outline" onClick={addManualItem}>
-                  <Plus className="w-3 h-3 mr-1" /> Adicionar Item
-                </Button>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <Label className="text-base font-semibold">Itens da Nota Fiscal / Recibo de Compra</Label>
+                  <p className="text-xs text-zinc-500">Selecione produtos cadastrados do estoque para preenchimento automático.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => openProductSearchModal(null)} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 gap-1">
+                    <Search className="w-3.5 h-3.5 text-emerald-600" /> Buscar Produto Cadastrado
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={addManualItem} className="gap-1">
+                    <Plus className="w-3.5 h-3.5" /> Adicionar Linha
+                  </Button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>SKU</TableHead>
+                      <TableHead>Buscar / SKU</TableHead>
                       <TableHead>Descrição *</TableHead>
                       <TableHead>NCM *</TableHead>
                       <TableHead>CFOP *</TableHead>
@@ -1682,33 +2545,50 @@ export function NFeModule() {
                   <TableBody>
                     {manualItems.map((item, index) => (
                       <TableRow key={index}>
-                        <TableCell>
-                          <Input value={item.sku} onChange={(e) => updateManualItem(index, 'sku', e.target.value)} className="w-24" placeholder="SKU" />
+                        <TableCell className="align-middle">
+                          <div className="flex items-center gap-1">
+                            <Input value={item.sku} onChange={(e) => updateManualItem(index, 'sku', e.target.value)} className="min-w-[120px] w-full font-mono text-xs" placeholder="SKU" />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              title="Buscar produto cadastrado no estoque"
+                              onClick={() => openProductSearchModal(index)}
+                              className="h-8 w-8 p-0 text-emerald-700 hover:bg-emerald-100 shrink-0"
+                            >
+                              <Search className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          {item.partId && (
+                            <Badge variant="outline" className="mt-1 bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]">
+                              ✓ Vinc. Estoque
+                            </Badge>
+                          )}
                         </TableCell>
-                        <TableCell>
-                          <Input value={item.descricao} onChange={(e) => updateManualItem(index, 'descricao', e.target.value)} className="w-40" placeholder="Descrição" />
+                        <TableCell className="align-middle min-w-[260px]">
+                          <Input value={item.descricao} onChange={(e) => updateManualItem(index, 'descricao', e.target.value)} className="w-full text-xs font-medium" placeholder="Descrição do item" />
                         </TableCell>
-                        <TableCell>
-                          <Input value={item.ncm} onChange={(e) => updateManualItem(index, 'ncm', maskNCM(e.target.value))} className="w-24" placeholder="NCM" maxLength={10} />
+                        <TableCell className="align-middle">
+                          <Input value={item.ncm} onChange={(e) => updateManualItem(index, 'ncm', maskNCM(e.target.value))} className="w-24 text-xs" placeholder="NCM" maxLength={10} />
                         </TableCell>
-                        <TableCell>
-                          <Input value={item.cfop} onChange={(e) => updateManualItem(index, 'cfop', maskCFOP(e.target.value))} className="w-20" placeholder="CFOP" maxLength={4} />
+                        <TableCell className="align-middle">
+                          <Input value={item.cfop} onChange={(e) => updateManualItem(index, 'cfop', maskCFOP(e.target.value))} className="w-20 text-xs" placeholder="1102" maxLength={4} />
                         </TableCell>
-                        <TableCell>
-                          <Input type="number" min={0} step="0.01" value={item.quantidade} onChange={(e) => updateManualItem(index, 'quantidade', parseFloat(e.target.value) || 0)} className="w-20 text-right" />
+                        <TableCell className="align-middle">
+                          <Input type="number" min={0} step="0.01" value={item.quantidade} onChange={(e) => updateManualItem(index, 'quantidade', parseFloat(e.target.value) || 0)} className="w-20 text-right text-xs" />
                         </TableCell>
-                        <TableCell>
-                          <Input value={item.unidade} onChange={(e) => updateManualItem(index, 'unidade', e.target.value)} className="w-16" />
+                        <TableCell className="align-middle">
+                          <Input value={item.unidade} onChange={(e) => updateManualItem(index, 'unidade', e.target.value)} className="w-16 text-xs text-center" />
                         </TableCell>
-                        <TableCell>
-                          <Input type="number" min={0} step="0.01" value={item.valorUnitario} onChange={(e) => updateManualItem(index, 'valorUnitario', parseFloat(e.target.value) || 0)} className="w-24 text-right" />
+                        <TableCell className="align-middle">
+                          <Input type="number" min={0} step="0.01" value={item.valorUnitario} onChange={(e) => updateManualItem(index, 'valorUnitario', parseFloat(e.target.value) || 0)} className="w-24 text-right text-xs" />
                         </TableCell>
-                        <TableCell className="text-right font-medium">
+                        <TableCell className="text-right font-medium align-middle text-xs text-emerald-700">
                           {formatCurrency(item.quantidade * item.valorUnitario)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="align-middle">
                           {manualItems.length > 1 && (
-                            <Button size="sm" variant="ghost" onClick={() => removeManualItem(index)} className="text-red-500 hover:text-red-700">
+                            <Button size="sm" variant="ghost" onClick={() => removeManualItem(index)} className="text-red-500 hover:text-red-700 h-8 w-8 p-0">
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           )}
@@ -1802,6 +2682,280 @@ export function NFeModule() {
               onClose={() => setShowClientInvoiceDoc(false)}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Product Search Dialog for Manual Grid Entry */}
+      <Dialog open={productSearchOpen} onOpenChange={setProductSearchOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold text-zinc-900">
+              <Search className="w-5 h-5 text-emerald-600" />
+              Buscar Produto Cadastrado no Estoque
+            </DialogTitle>
+            <p className="text-xs text-zinc-500">
+              Selecione o produto cadastrado para preencher automaticamente os dados do item na nota fiscal ou recibo de compra.
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <Input
+                autoFocus
+                placeholder="Filtrar por SKU, Descrição ou NCM..."
+                value={productSearchQuery}
+                onChange={(e) => setProductSearchQuery(e.target.value)}
+                className="pl-9 text-sm"
+              />
+            </div>
+          </div>
+
+          <ScrollArea className="flex-1 border rounded-md max-h-[380px]">
+            {loadingParts ? (
+              <div className="flex items-center justify-center py-12 text-zinc-500">
+                <Loader2 className="w-6 h-6 animate-spin mr-2 text-emerald-600" />
+                Carregando produtos cadastrados...
+              </div>
+            ) : registeredParts.length === 0 ? (
+              <div className="text-center py-12 text-zinc-400 text-sm">
+                Nenhum produto cadastrado encontrado. Cadastre os produtos no módulo de Estoque.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>SKU</TableHead>
+                    <TableHead>Descrição</TableHead>
+                    <TableHead>NCM</TableHead>
+                    <TableHead>Unidade</TableHead>
+                    <TableHead className="text-right">Estoque Atual</TableHead>
+                    <TableHead className="text-right">Preço Custo</TableHead>
+                    <TableHead className="text-center">Ação</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {registeredParts
+                    .filter(p => {
+                      if (!productSearchQuery.trim()) return true
+                      const q = productSearchQuery.toLowerCase()
+                      return (
+                        p.sku?.toLowerCase().includes(q) ||
+                        p.description?.toLowerCase().includes(q) ||
+                        p.ncm?.toLowerCase().includes(q)
+                      )
+                    })
+                    .map((part) => (
+                      <TableRow
+                        key={part.id}
+                        className="cursor-pointer hover:bg-emerald-50/70 transition-colors"
+                        onClick={() => selectProductForManualEntry(part)}
+                      >
+                        <TableCell className="font-mono text-xs font-bold text-zinc-800">{part.sku}</TableCell>
+                        <TableCell className="font-medium text-zinc-900 text-sm">{part.description}</TableCell>
+                        <TableCell className="text-xs text-zinc-500">{part.ncm || '—'}</TableCell>
+                        <TableCell className="text-xs text-zinc-600">{part.unit}</TableCell>
+                        <TableCell className="text-right font-medium text-xs">
+                          <span className={part.quantity <= 0 ? 'text-amber-600 font-semibold' : 'text-zinc-800'}>
+                            {part.quantity}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-sm text-emerald-700">
+                          {formatCurrency(part.costPrice)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white h-7 px-2.5 text-xs gap-1"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              selectProductForManualEntry(part)
+                            }}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Inserir
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            )}
+          </ScrollArea>
+
+          <DialogFooter className="pt-2">
+            <Button variant="outline" onClick={() => setProductSearchOpen(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pricing & Profit Margin Modal */}
+      <Dialog open={pricingOpen} onOpenChange={setPricingOpen}>
+        <DialogContent className="max-w-[95vw] lg:max-w-6xl xl:max-w-7xl max-h-[92vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold text-zinc-900">
+              <DollarSign className="w-6 h-6 text-emerald-600" />
+              Precificação & Margem de Lucro dos Itens da Entrada
+            </DialogTitle>
+            <p className="text-xs text-zinc-500">
+              Ajuste a margem de lucro individualmente para cada produto que deu entrada no estoque. Itens com margens diferentes podem ser configurados separadamente.
+            </p>
+          </DialogHeader>
+
+          {/* Quick Toolbar: Global Margin */}
+          <div className="bg-emerald-50/80 border border-emerald-200 rounded-lg p-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-emerald-900">Margem Padrão Rápida:</span>
+              <div className="flex items-center gap-1">
+                {[30, 40, 50, 70, 100].map((pct) => (
+                  <Button
+                    key={pct}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setGlobalMarginInput(String(pct))
+                      applyGlobalMargin(pct)
+                    }}
+                    className="h-7 px-2 text-xs font-bold border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+                  >
+                    {pct}%
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <Label className="text-xs font-medium text-emerald-900 shrink-0">Margem Global Customizada (%):</Label>
+              <Input
+                type="number"
+                min={0}
+                step={1}
+                value={globalMarginInput}
+                onChange={(e) => setGlobalMarginInput(e.target.value)}
+                className="w-20 h-8 text-xs font-bold text-center bg-white"
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1"
+                onClick={() => applyGlobalMargin(parseFloat(globalMarginInput) || 0)}
+              >
+                Aplicar em Todos os Itens
+              </Button>
+            </div>
+          </div>
+
+          {/* Items Pricing Table */}
+          <ScrollArea className="flex-1 border rounded-md max-h-[420px] my-2">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-zinc-50">
+                  <TableHead>SKU / Código</TableHead>
+                  <TableHead>Descrição do Produto</TableHead>
+                  <TableHead className="text-right">Custo NF-e (R$)</TableHead>
+                  <TableHead className="text-right">Venda Atual (R$)</TableHead>
+                  <TableHead className="text-center w-36">Margem de Lucro (%)</TableHead>
+                  <TableHead className="text-right w-40">Novo Preço Venda (R$)</TableHead>
+                  <TableHead className="text-right">Lucro Unit. (R$)</TableHead>
+                  <TableHead className="text-center">Estoque</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pricingItems.map((item, index) => (
+                  <TableRow key={item.itemId} className="hover:bg-zinc-50/80">
+                    <TableCell className="font-mono text-xs font-bold text-zinc-800">{item.sku}</TableCell>
+                    <TableCell className="font-medium text-zinc-900 text-sm">{item.descricao}</TableCell>
+                    <TableCell className="text-right font-medium text-xs text-zinc-700">
+                      {formatCurrency(item.custoAtual)}
+                    </TableCell>
+                    <TableCell className="text-right text-xs text-zinc-500">
+                      {item.precoVendaAtual > 0 ? formatCurrency(item.precoVendaAtual) : '—'}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Input
+                          type="number"
+                          min={0}
+                          step={0.5}
+                          value={item.margemLucroPct}
+                          onChange={(e) => updateItemMarginPct(index, parseFloat(e.target.value) || 0)}
+                          className="w-20 h-8 text-center font-bold text-xs border-emerald-300 focus:ring-emerald-500"
+                        />
+                        <span className="text-xs font-semibold text-zinc-600">%</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={item.novoPrecoVenda}
+                        onChange={(e) => updateItemSalePrice(index, parseFloat(e.target.value) || 0)}
+                        className="w-28 h-8 text-right font-bold text-xs text-emerald-700 border-emerald-300 focus:ring-emerald-500 ml-auto"
+                      />
+                    </TableCell>
+                    <TableCell className="text-right font-bold text-xs text-emerald-600">
+                      +{formatCurrency(item.lucroBrutoUnit)}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {item.partId ? (
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]">
+                          ✓ Vinc. Estoque
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[10px]">
+                          Não Vinc.
+                        </Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+
+          {/* Pricing Financial Summary */}
+          <div className="p-3 bg-zinc-100/80 rounded-lg flex flex-wrap items-center justify-between gap-4 text-xs">
+            <div>
+              <span className="text-zinc-500">Total de Itens:</span>
+              <span className="ml-1 font-bold text-zinc-900">{pricingItems.length}</span>
+            </div>
+            <div>
+              <span className="text-zinc-500">Custo Total dos Itens:</span>
+              <span className="ml-1 font-bold text-zinc-800">
+                {formatCurrency(pricingItems.reduce((s, i) => s + i.custoAtual * i.quantidade, 0))}
+              </span>
+            </div>
+            <div>
+              <span className="text-zinc-500">Faturamento Projetado:</span>
+              <span className="ml-1 font-bold text-emerald-700">
+                {formatCurrency(pricingItems.reduce((s, i) => s + i.novoPrecoVenda * i.quantidade, 0))}
+              </span>
+            </div>
+            <div>
+              <span className="text-zinc-500">Lucro Bruto Projetado:</span>
+              <span className="ml-1 font-bold text-emerald-800 text-sm">
+                +{formatCurrency(pricingItems.reduce((s, i) => s + i.lucroBrutoUnit * i.quantidade, 0))}
+              </span>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-3 gap-2">
+            <Button variant="outline" onClick={() => setPricingOpen(false)} disabled={savingPricing}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSavePricing}
+              disabled={savingPricing}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+            >
+              {savingPricing ? <Loader2 className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4" />}
+              Salvar e Atualizar Preços de Venda
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

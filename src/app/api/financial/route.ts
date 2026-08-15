@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 // GET /api/financial - List financial entries
 export async function GET(request: NextRequest) {
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error listing financial entries: [REDACTED]');
+    logger.error('Error listing financial entries: [REDACTED]', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar entradas financeiras' },
       { status: 500 }
@@ -262,7 +263,7 @@ export async function POST(request: NextRequest) {
       data: entry,
     });
   } catch (error) {
-    console.error('Error creating financial entry: [REDACTED]');
+    logger.error('Error creating financial entry: [REDACTED]', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao criar entrada financeira' },
       { status: 500 }

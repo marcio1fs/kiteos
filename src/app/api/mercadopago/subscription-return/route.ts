@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
@@ -68,7 +69,7 @@ export async function GET(request: NextRequest) {
                 const mpStatus = latestPayment.status;
                 const mpPaymentId = String(latestPayment.id);
 
-                console.log(`[MP Return] Payment ${mpPaymentId} status: ${mpStatus} for subscription ${subscription.id}`);
+                logger.info(`[MP Return] Payment ${mpPaymentId} status: ${mpStatus} for subscription ${subscription.id}`);
 
                 // Update subscription with MP payment info
                 await db.subscription.update({
@@ -128,13 +129,13 @@ export async function GET(request: NextRequest) {
                     data: {
                       type: 'SYSTEM',
                       title: 'Pagamento Aprovado',
-                      message: `Pagamento do plano ${subscription.plan} foi aprovado via Mercado Pago. Valor: R$ ${subscription.monthlyPrice.toFixed(2)}`,
+                      message: `Pagamento do plano ${subscription.plan} foi aprovado via Mercado Pago. Valor: R$ ${Number(subscription.monthlyPrice || 0).toFixed(2)}`,
                       status: 'PENDENTE',
                       officeId: subscription.officeId,
                     },
                   });
 
-                  console.log(`[MP Return] Subscription ${subscription.id} ACTIVATED for plan ${subscription.plan}`);
+                  logger.info(`[MP Return] Subscription ${subscription.id} ACTIVATED for plan ${subscription.plan}`);
                 } else if (mpStatus === 'rejected' || mpStatus === 'cancelled') {
                   // Revert to FREE
                   await db.subscription.update({
@@ -145,17 +146,17 @@ export async function GET(request: NextRequest) {
                       monthlyPrice: 0,
                     },
                   });
-                  console.log(`[MP Return] Subscription ${subscription.id} REVERTED to FREE - payment ${mpStatus}`);
+                  logger.info(`[MP Return] Subscription ${subscription.id} REVERTED to FREE - payment ${mpStatus}`);
                 } else if (mpStatus === 'pending' || mpStatus === 'in_process') {
                   // Payment still processing - keep PENDENTE
-                  console.log(`[MP Return] Subscription ${subscription.id} payment still processing: ${mpStatus}`);
+                  logger.info(`[MP Return] Subscription ${subscription.id} payment still processing: ${mpStatus}`);
                 }
               } else {
-                console.log('[MP Return] No payments found for preference yet - payment may still be processing');
+                logger.info('[MP Return] No payments found for preference yet - payment may still be processing');
               }
             }
           } catch (e) {
-            console.error('[MP Return] Error checking payment status:', e);
+            logger.error('[MP Return] Error checking payment status', { error: e instanceof Error ? e.message : String(e) });
           }
         }
       }
@@ -166,7 +167,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.redirect(redirectUrl);
   } catch (error) {
-    console.error('[MP Return] Error:', error);
+    logger.error('[MP Return] Error', { error: error instanceof Error ? error.message : String(error) });
     const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     return NextResponse.redirect(`${APP_URL}?mp_return=error`);
   }

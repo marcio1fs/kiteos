@@ -8,6 +8,8 @@
  * For multi-instance production, replace with Redis-backed store.
  */
 
+import { getRedisClient } from './redis';
+
 interface RateLimitEntry {
   count: number;
   resetAt: number;
@@ -153,4 +155,104 @@ export function getClientIdentifier(request: Request, suffix?: string): string {
   const ip = realIp || (forwarded ? forwarded.split(',')[0].trim() : 'unknown');
 
   return suffix ? `${ip}:${suffix}` : ip;
+}
+
+/**
+ * Async version of checkRateLimit using Redis (if configured)
+ */
+export async function checkRateLimitAsync(
+  key: string,
+  config: { maxRequests: number; windowMs: number }
+): Promise<{ allowed: boolean; retryAfterMs?: number; remaining: number }> {
+  const redis = getRedisClient();
+  if (!redis) {
+    // Fallback to in-memory
+    return checkRateLimit(key, config);
+  }
+  
+  // Redis-based implementation using INCR + PEXPIRE
+  const redisKey = `ratelimit:${key}`;
+  const windowSec = Math.ceil(config.windowMs / 1000);
+  
+  const current = await redis.incr(redisKey);
+  if (current === 1) {
+    await redis.expire(redisKey, windowSec);
+  }
+  
+  if (current > config.maxRequests) {
+    const ttl = await redis.pttl(redisKey);
+    return { allowed: false, retryAfterMs: ttl > 0 ? ttl : config.windowMs, remaining: 0 };
+  }
+  
+  return { allowed: true, remaining: config.maxRequests - current };
+}
+
+/**
+ * Async version of checkAccountLockout using Redis
+ */
+export async function checkAccountLockoutAsync(identifier: string): Promise<{ locked: boolean; lockoutUntilMs?: number }> {
+  const redis = getRedisClient();
+  if (!redis) return checkAccountLockout(identifier);
+  
+  const key = `lockout:${identifier}`;
+  const lockedUntil = await redis.get(key);
+  
+  if (!lockedUntil) return { locked: false };
+  
+  const lockoutMs = parseInt(lockedUntil, 10);
+  if (lockoutMs > Date.now()) {
+    return { locked: true, lockoutUntilMs: lockoutMs };
+  }
+  
+  await redis.del(key);
+  return { locked: false };
+}
+
+/**
+ * Async version of recordFailedLogin using Redis
+ */
+export async function recordFailedLoginAsync(identifier: string): Promise<{ locked: boolean; attemptsRemaining: number }> {
+  const redis = getRedisClient();
+  if (!redis) return recordFailedLogin(identifier);
+  
+  const config = RATE_LIMITS.LOGIN_LOCKOUT;
+  const key = `lockout_count:${identifier}`;
+  const lockoutKey = `lockout:${identifier}`;
+  const now = Date.now();
+  
+  // First check if already locked
+  const lockedUntil = await redis.get(lockoutKey);
+  if (lockedUntil && parseInt(lockedUntil, 10) > now) {
+    return { locked: true, attemptsRemaining: 0 };
+  }
+  
+  const windowSec = Math.ceil(config.lockoutMs / 1000);
+  const current = await redis.incr(key);
+  
+  if (current === 1) {
+    await redis.expire(key, windowSec);
+  }
+  
+  if (current >= config.maxAttempts) {
+    // Lock the account
+    const lockoutTime = now + config.lockoutMs;
+    await redis.set(lockoutKey, lockoutTime.toString(), 'PX', config.lockoutMs);
+    await redis.del(key); // clear the count since it's locked
+    return { locked: true, attemptsRemaining: 0 };
+  }
+  
+  return { locked: false, attemptsRemaining: config.maxAttempts - current };
+}
+
+/**
+ * Async version of clearAccountLockout using Redis
+ */
+export async function clearAccountLockoutAsync(identifier: string): Promise<void> {
+  const redis = getRedisClient();
+  if (!redis) {
+    return clearAccountLockout(identifier);
+  }
+  
+  await redis.del(`lockout:${identifier}`);
+  await redis.del(`lockout_count:${identifier}`);
 }

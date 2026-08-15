@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
@@ -51,12 +52,25 @@ export async function POST(request: NextRequest) {
     }
 
     // Delete existing SPED registros for this period (allow re-generation)
-    await db.spedRegistro.deleteMany({
+    const deletedCount = await db.spedRegistro.deleteMany({
       where: {
         officeId,
         periodo: competencia,
       },
     })
+
+    if (deletedCount.count > 0) {
+      await createAuditLog({
+        action: 'SPED_FISCAL_REPLACED',
+        entity: 'SpedRegistro',
+        details: JSON.stringify({
+          competencia,
+          registrosDeletados: deletedCount.count,
+        }),
+        userId: auth.payload.userId,
+        officeId,
+      })
+    }
 
     // Generate SPED Fiscal
     const config: SpedGeneratorConfig = {
@@ -146,7 +160,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Erro ao gerar SPED Fiscal:', error)
+    logger.error('Erro ao gerar SPED Fiscal:', { error: error instanceof Error ? error.message : String(error) })
     return NextResponse.json(
       {
         success: false,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth, auditLog } from '@/lib/auth';
 import { calculateIssqn, validateNfseData, generateNfseXml, getCurrentCompetencia, ALIQ_ISSQN_PADRAO, SERVICOS_OFICINA } from '@/lib/nfse';
@@ -63,25 +64,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build discriminacao from OS items
-    const servicos = os.items
-      .filter(i => i.type === 'SERVICO')
-      .map(i => `${i.description} (Qtd: ${Number(i.quantity)}, Valor: R$ ${Number(i.totalPrice).toFixed(2)})`);
+    // Separate items by type
+    const servicoItems = os.items.filter(i => i.type === 'SERVICO');
+    const pecaItems = os.items.filter(i => i.type === 'PECA');
 
-    const pecas = os.items
-      .filter(i => i.type === 'PECA')
-      .map(i => `${i.description} (Qtd: ${Number(i.quantity)}, Valor: R$ ${Number(i.totalPrice).toFixed(2)})`);
+    // NFS-e is strictly for services — block if no services present
+    if (servicoItems.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Esta Ordem de Serviço não possui serviços/mão de obra cadastrados. A NFS-e é exclusiva para serviços. Para peças, utilize a emissão de NF-e/NFC-e.',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Calculate totals for services and parts separately
+    const rawTotalServicos = servicoItems.reduce((acc, item) => acc + Number(item.totalPrice), 0);
+    const rawTotalPecas = pecaItems.reduce((acc, item) => acc + Number(item.totalPrice), 0);
+    const rawTotalOS = rawTotalServicos + rawTotalPecas;
+
+    // Apply proportional discount to services if OS has discount
+    let descontoServicos = 0;
+    const totalDiscountOS = Number(os.totalDiscount) || 0;
+    if (totalDiscountOS > 0 && rawTotalOS > 0) {
+      descontoServicos = Number(((totalDiscountOS * rawTotalServicos) / rawTotalOS).toFixed(2));
+    }
+
+    const valorServicosFinal = Math.max(0, Number((rawTotalServicos - descontoServicos).toFixed(2)));
+
+    // Build discriminacao focusing exclusively on services
+    const servicosDesc = servicoItems.map(
+      i => `${i.description} (Qtd: ${Number(i.quantity)}, Valor: R$ ${Number(i.totalPrice).toFixed(2)})`
+    );
 
     let discriminacao = `OS: ${os.number}`;
     if (os.description) discriminacao += ` - ${os.description}`;
     if (os.vehicle) discriminacao += `\nVeículo: ${os.vehicle.plate} - ${[os.vehicle.brand, os.vehicle.model].filter(Boolean).join(' ')}`;
-    if (servicos.length > 0) discriminacao += `\n\nServiços:\n${servicos.join('\n')}`;
-    if (pecas.length > 0) discriminacao += `\n\nPeças/Materiais:\n${pecas.join('\n')}`;
-    if (Number(os.totalDiscount) > 0) discriminacao += `\n\nDesconto: R$ ${Number(os.totalDiscount).toFixed(2)}`;
+    discriminacao += `\n\nServiços Prestados:\n${servicosDesc.join('\n')}`;
+    if (descontoServicos > 0) {
+      discriminacao += `\nDesconto nos Serviços: R$ ${descontoServicos.toFixed(2)}`;
+    }
+    if (pecaItems.length > 0) {
+      discriminacao += `\n\n(Obs: Peças/materiais no valor total de R$ ${rawTotalPecas.toFixed(2)} devem ser faturados separadamente via NF-e/NFC-e para tributação de ICMS).`;
+    }
 
-    // Determine service item code - prefer SERVICO items, else default
-    const hasServicoItems = os.items.some(i => i.type === 'SERVICO')
-    const serviceCode = itemListaServico || (hasServicoItems ? '14.01' : '14.04');
+    // Determine service item code - default to 14.01 (lubrication, washing, maintenance)
+    const serviceCode = itemListaServico || '14.01';
 
     // Validate service code
     if (!SERVICOS_OFICINA.some(s => s.codigo === serviceCode)) {
@@ -91,14 +120,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build NFS-e data
+    // Build NFS-e data with ONLY service amount for ISSQN
     const nfseData = {
       numero: '',
       competencia: getCurrentCompetencia(),
       itemListaServico: serviceCode,
       discriminacao,
-      valorServicos: Number(os.totalAmount),
-      valorDeducoes: Number(os.totalDiscount),
+      valorServicos: valorServicosFinal,
+      valorDeducoes: 0,
       aliqIssqn: Number(aliqIssqn) || ALIQ_ISSQN_PADRAO,
       tipoTributacao: 'ISSQN' as const,
       clienteCpfCnpj: os.client.cpfCnpj || undefined,
@@ -221,7 +250,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: nfse }, { status: 201 });
   } catch (error) {
-    console.error('Error generating NFS-e from OS:', error);
+    logger.error('Error generating NFS-e from OS:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao gerar NFS-e a partir da OS' },
       { status: 500 }

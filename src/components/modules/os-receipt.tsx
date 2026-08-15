@@ -22,19 +22,19 @@ interface OSReceiptProps {
     paymentMethod?: string | null
     paidAt?: string | null
     createdAt: string
-    client: {
+    client?: {
       name: string
       phone?: string | null
       email?: string | null
       cpfCnpj?: string | null
-    }
-    vehicle: {
+    } | null
+    vehicle?: {
       plate: string
       brand?: string | null
       model?: string | null
       year?: number | null
       color?: string | null
-    }
+    } | null
     items: {
       type: string
       description: string
@@ -243,11 +243,11 @@ function ReceiptContent({ os, office, mode }: Omit<OSReceiptProps, 'onClose'>) {
         <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '2px' }}>
           CLIENTE
         </div>
-        <div>{os.client.name}</div>
-        {os.client.cpfCnpj && (
+        <div>{os.client?.name || 'Cliente não informado'}</div>
+        {os.client?.cpfCnpj && (
           <div>CPF/CNPJ: {formatCPFCpf(os.client.cpfCnpj)}</div>
         )}
-        {os.client.phone && <div>Tel: {formatPhone(os.client.phone)}</div>}
+        {os.client?.phone && <div>Tel: {formatPhone(os.client.phone)}</div>}
       </div>
 
       <div style={{ marginTop: '6px' }}>
@@ -255,12 +255,12 @@ function ReceiptContent({ os, office, mode }: Omit<OSReceiptProps, 'onClose'>) {
           VEÍCULO
         </div>
         <div>
-          {[os.vehicle.brand, os.vehicle.model].filter(Boolean).join(' ') || 'N/A'}
+          {os.vehicle ? [os.vehicle.brand, os.vehicle.model].filter(Boolean).join(' ') || 'N/A' : 'N/A'}
         </div>
         <div>
-          Placa: {os.vehicle.plate}
-          {os.vehicle.year ? ` | Ano: ${os.vehicle.year}` : ''}
-          {os.vehicle.color ? ` | Cor: ${os.vehicle.color}` : ''}
+          Placa: {os.vehicle?.plate || '—'}
+          {os.vehicle?.year ? ` | Ano: ${os.vehicle.year}` : ''}
+          {os.vehicle?.color ? ` | Cor: ${os.vehicle.color}` : ''}
         </div>
       </div>
 
@@ -440,7 +440,7 @@ export function OSReceipt({ os, office, mode = 'receipt', onClose }: OSReceiptPr
         }),
       })
       if (res.success) {
-        const phone = res.data?.phone || os.client.phone || ''
+        const phone = res.data?.phone || os.client?.phone || ''
         setWaMessage({
           type: 'success',
           text: `${mode === 'receipt' ? 'Recibo' : 'Orçamento'} enviado via WhatsApp para ${phone}`,
@@ -457,7 +457,7 @@ export function OSReceipt({ os, office, mode = 'receipt', onClose }: OSReceiptPr
       setWaSending(false)
       setTimeout(() => setWaMessage(null), 5000)
     }
-  }, [authOffice?.id, os.id, os.client.phone, mode])
+  }, [authOffice?.id, os.id, os.client?.phone, mode])
 
   const handlePrint = useCallback(() => {
     const content = receiptRef.current

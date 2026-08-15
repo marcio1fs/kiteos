@@ -128,9 +128,10 @@ function extractValue(xml: string, tagPath: string[]): string | null {
     // Strip namespace prefixes for matching
     const cleanTag = path.replace(/[\w]+:/g, '');
     const patterns = [
-      // With namespace prefix
-      new RegExp(`<[\\w]*:?${escapeRegex(cleanTag)}[^>]*>([^<]+)</[\\w]*:?${escapeRegex(cleanTag)}>`, 'i'),
-      // Simple tag
+      // AUD-04 FIX: Use non-capturing group (?:ns:)? so the tag name is not consumed as a namespace prefix.
+      // Old pattern <[\w]*:?tagName> failed because [\w]* greedily consumed the tag name itself.
+      new RegExp(`<(?:[\\w]+:)?${escapeRegex(cleanTag)}[^>]*>([^<]+)</(?:[\\w]+:)?${escapeRegex(cleanTag)}>`, 'i'),
+      // Fallback: simple tag without namespace
       new RegExp(`<${escapeRegex(cleanTag)}[^>]*>([^<]+)</${escapeRegex(cleanTag)}>`, 'i'),
     ];
 
@@ -156,9 +157,9 @@ function extractAllValues(xml: string, parentTag: string, childTag: string): str
   const cleanParent = parentTag.replace(/[\w]+:/g, '');
   const cleanChild = childTag.replace(/[\w]+:/g, '');
 
-  // Find all parent blocks
+  // Find all parent blocks — AUD-04 FIX: use non-capturing group for namespace prefix
   const parentPattern = new RegExp(
-    `<[\\w]*:?${escapeRegex(cleanParent)}[^>]*>([\\s\\S]*?)</[\\w]*:?${escapeRegex(cleanParent)}>`,
+    `<(?:[\\w]+:)?${escapeRegex(cleanParent)}[^>]*>([\\s\\S]*?)</(?:[\\w]+:)?${escapeRegex(cleanParent)}>`,
     'gi'
   );
 
@@ -166,7 +167,7 @@ function extractAllValues(xml: string, parentTag: string, childTag: string): str
   while ((parentMatch = parentPattern.exec(xml)) !== null) {
     const block = parentMatch[1];
     const childPattern = new RegExp(
-      `<[\\w]*:?${escapeRegex(cleanChild)}[^>]*>([^<]+)</[\\w]*:?${escapeRegex(cleanChild)}>`,
+      `<(?:[\\w]+:)?${escapeRegex(cleanChild)}[^>]*>([^<]+)</(?:[\\w]+:)?${escapeRegex(cleanChild)}>`,
       'i'
     );
     const childMatch = block.match(childPattern);
@@ -181,9 +182,20 @@ function extractAllValues(xml: string, parentTag: string, childTag: string): str
  * Extract a section/block from XML
  */
 function extractBlock(xml: string, tag: string): string | null {
+  // AUD-04 FIX: Support slash-separated paths (e.g. 'total/ICMSTot') by chaining block extractions
+  if (tag.includes('/')) {
+    const parts = tag.split('/');
+    let current: string | null = xml;
+    for (const part of parts) {
+      if (!current) return null;
+      current = extractBlock(current, part);
+    }
+    return current;
+  }
   const cleanTag = tag.replace(/[\w]+:/g, '');
+  // AUD-04 FIX: Use non-capturing group (?:ns:)? to avoid consuming the tag name as a namespace prefix
   const pattern = new RegExp(
-    `<[\\w]*:?${escapeRegex(cleanTag)}[^>]*>([\\s\\S]*?)</[\\w]*:?${escapeRegex(cleanTag)}>`,
+    `<(?:[\\w]+:)?${escapeRegex(cleanTag)}[^>]*>([\\s\\S]*?)</(?:[\\w]+:)?${escapeRegex(cleanTag)}>`,
     'i'
   );
   const match = xml.match(pattern);
@@ -196,8 +208,9 @@ function extractBlock(xml: string, tag: string): string | null {
 function extractAllBlocks(xml: string, tag: string): string[] {
   const results: string[] = [];
   const cleanTag = tag.replace(/[\w]+:/g, '');
+  // AUD-04 FIX: Use non-capturing group (?:ns:)? to avoid consuming the tag name as a namespace prefix
   const pattern = new RegExp(
-    `<[\\w]*:?${escapeRegex(cleanTag)}[^>]*>([\\s\\S]*?)</[\\w]*:?${escapeRegex(cleanTag)}>`,
+    `<(?:[\\w]+:)?${escapeRegex(cleanTag)}[^>]*>([\\s\\S]*?)</(?:[\\w]+:)?${escapeRegex(cleanTag)}>`,
     'gi'
   );
   let match;
@@ -212,8 +225,16 @@ function extractAllBlocks(xml: string, tag: string): string[] {
  */
 function parseNumber(value: string | null): number {
   if (!value) return 0;
-  // Handle Brazilian format: 1.234,56 -> 1234.56
-  const cleaned = value.replace(/\s/g, '').replace(/\.(?=\d{3})/g, '').replace(',', '.');
+  // AUD-04 FIX: Handle Brazilian thousand-separator format: 1.234,56 -> 1234.56
+  // The original regex /\.(?=\d{3})/g incorrectly removed the decimal point in NF-e values
+  // like '10.0000' (ten with 4 decimal places) converting it to 100000.
+  // A thousands separator dot is followed by EXACTLY 3 digits then another dot, comma, or end.
+  // A decimal dot (NF-e style) is followed by 4+ digits like '0000'.
+  const cleaned = value.replace(/\s/g, '')
+    // Remove thousand separator dots: dot followed by exactly 3 digits then (dot|comma|end)
+    .replace(/\.(\d{3})(?=[.,]|$)/g, '$1')
+    // Convert Brazilian decimal comma to dot
+    .replace(',', '.');
   const num = parseFloat(cleaned);
   return isNaN(num) ? 0 : num;
 }
@@ -343,11 +364,37 @@ function calculateChaveDV(base43: string): number {
 }
 
 /**
- * Validate CNPJ (14 digits)
+ * Validate CNPJ (14 digits + check digit verification)
+ * SEC-02 FIX: Added modulo 11 check digit validation
  */
 export function validateCnpj(cnpj: string): boolean {
-  const cleaned = cnpj.replace(/\D/g, '');
-  return /^\d{14}$/.test(cleaned);
+  const cleaned = cnpj.replace(/\D/g, '')
+  if (cleaned.length !== 14) return false
+
+  // Reject known invalid sequences (all same digit)
+  if (/^(\d)\1{13}$/.test(cleaned)) return false
+
+  // Calculate first check digit
+  const weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+  let sum = 0
+  for (let i = 0; i < 12; i++) {
+    sum += parseInt(cleaned[i], 10) * weights1[i]
+  }
+  let remainder = sum % 11
+  const dv1 = remainder < 2 ? 0 : 11 - remainder
+
+  if (parseInt(cleaned[12], 10) !== dv1) return false
+
+  // Calculate second check digit
+  const weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+  sum = 0
+  for (let i = 0; i < 13; i++) {
+    sum += parseInt(cleaned[i], 10) * weights2[i]
+  }
+  remainder = sum % 11
+  const dv2 = remainder < 2 ? 0 : 11 - remainder
+
+  return parseInt(cleaned[13], 10) === dv2
 }
 
 /**

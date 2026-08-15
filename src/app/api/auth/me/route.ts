@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { requireAuth } from '@/lib/auth';
 
 // SEC-01 FIX: Replaced verifyToken + getTokenFromHeaders with requireAuth
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Me error:', error);
+    logger.error('Me error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro interno do servidor' },
       { status: 500 }

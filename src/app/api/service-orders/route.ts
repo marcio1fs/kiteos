@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { requireAuth } from '@/lib/auth';
@@ -35,11 +36,11 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { number: { contains: search } },
-        { description: { contains: search } },
-        { client: { name: { contains: search } } },
-        { vehicle: { plate: { contains: search } } },
-        { vehicle: { model: { contains: search } } },
+        { number: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { client: { name: { contains: search, mode: 'insensitive' } } },
+        { vehicle: { plate: { contains: search, mode: 'insensitive' } } },
+        { vehicle: { model: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: serviceOrders });
   } catch (error) {
-    console.error('Error listing service orders:', error);
+    logger.error('Error listing service orders:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar ordens de serviço' },
       { status: 500 }
@@ -161,8 +162,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Auto-generate OS number: A001, A002, ..., A999, B001, ...
-    const finalNumber = await generateNextNumber('serviceOrder');
+    // Auto-generate OS number: A001, A002, ..., A999, B001, ... — AUD-02 FIX: scoped to this office
+    const finalNumber = await generateNextNumber('serviceOrder', officeId);
 
     // Calculate totals from items
     let totalParts = 0;
@@ -196,6 +197,7 @@ export async function POST(request: NextRequest) {
         mechanicId: item.mechanicId || null,
         commissionPct: commPct,
         commissionValue: commValue,
+        officeId,
       };
     });
 
@@ -292,9 +294,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: serviceOrder }, { status: 201 });
   } catch (error) {
-    console.error('Error creating service order:', error);
+    logger.error('Error creating service order:', { error: error instanceof Error ? error.message : String(error) });
+    const errorMessage = error instanceof Error ? error.message : 'Erro ao criar ordem de serviço';
     return NextResponse.json(
-      { success: false, error: 'Erro ao criar ordem de serviço' },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }

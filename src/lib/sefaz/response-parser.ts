@@ -940,8 +940,14 @@ export function mapSefazErrorToFriendly(cStat: string, xMotivo: string): string 
     '996': 'Rejeição: NF-e com CPF/CNPJ diferente do pedido de inutilização',
     '997': 'Rejeição: NF-e com CPF/CNPJ diferente do pedido de cancelamento',
     '998': 'Rejeição: NF-e com CPF/CNPJ diferente do pedido de consulta',
-    '999': 'Rejeição: NF-e com CPF/CNPJ diferente do pedido de download',
+    // Note: '999' is intentionally NOT mapped here — it is not a real SEFAZ code.
+    // For unknown/unmapped cStats, we fall back to returning the raw xMotivo from SEFAZ.
   }
 
-  return errorMap[cStat] || xMotivo || 'Erro desconhecido na comunicação com SEFAZ'
+  // AUD-06 FIX: Return the mapped friendly message if available.
+  // For unknown codes, prefer the raw xMotivo provided by SEFAZ (more specific than a generic fallback).
+  if (errorMap[cStat]) {
+    return errorMap[cStat];
+  }
+  return xMotivo || `Código SEFAZ ${cStat}: resposta não mapeada`;
 }

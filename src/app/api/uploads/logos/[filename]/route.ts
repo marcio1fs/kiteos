@@ -13,7 +13,7 @@ const MIME_MAP: Record<string, string> = {
 // ============================================================================
 // SECURITY FIX: Maximum file size for logo uploads (500KB)
 // ============================================================================
-const MAX_LOGO_SIZE = 500 * 1024
+const MAX_LOGO_SIZE = 5 * 1024 * 1024
 
 function getProjectRoot(): string {
   const cwd = process.cwd()
@@ -30,14 +30,7 @@ export async function GET(
   try {
     const { filename } = await params
 
-    // ============================================================================
-    // SECURITY FIX: Added authentication check for logo access
-    // Was accessible without auth after removing blanket /api/uploads/ bypass
-    // ============================================================================
-    const auth = await requireAuth(request)
-    if (!auth.payload) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-    }
+    // Note: Publicly serve logos for <img> tags and receipts without requiring Authorization header
 
     // ============================================================================
     // SECURITY FIX: Enhanced filename sanitization

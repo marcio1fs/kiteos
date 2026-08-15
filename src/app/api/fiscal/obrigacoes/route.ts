@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { requireAuth } from '@/lib/auth';
 import { getObrigacoesFromService } from '@/lib/fiscal/obrigacoes-service';
 
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error listing fiscal obligations:', error);
+    logger.error('Error listing fiscal obligations:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao listar obrigações fiscais' },
       { status: 500 }

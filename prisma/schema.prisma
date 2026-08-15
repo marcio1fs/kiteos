@@ -13,7 +13,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -83,6 +83,8 @@ model Office {
   taxRules        TaxRule[]
   sequencers      Sequencer[]
   refreshTokens   RefreshToken[]
+  cashSessions    CashSession[]
+  cashMovements   CashMovement[]
 
   @@index([active, deleted])
   @@map("offices")
@@ -94,6 +96,7 @@ model User {
   password     String   // bcrypt/argon2 hash — never plain-text
   name         String
   role         String   @default("EMPLOYEE") // ADMIN, OWNER, EMPLOYEE
+  commissionRate Float  @default(0)          // Taxa de comissão (%) Ex: 5.0 = 5%
   active       Boolean  @default(true)
   deleted      Boolean  @default(false)
   officeId     String
@@ -103,6 +106,8 @@ model User {
 
   auditLogs      AuditLog[]
   refreshTokens  RefreshToken[]
+  sales          Sale[]
+  cashSessions   CashSession[]
 
   @@unique([email, officeId])   // FIX: was global @unique — must be per-tenant
   @@index([officeId])
@@ -857,19 +862,25 @@ model Sale {
   obs             String?
   deleted         Boolean  @default(false)
   clientId        String?
-  client          Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull) // FIX
+  client          Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  userId          String?
+  user            User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  cashSessionId   String?
+  cashSession     CashSession? @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
   officeId        String
-  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  office          Office       @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   items           SaleItem[]
   financialEntries FinancialEntry[]
   clientInvoices  ClientInvoice[]
 
-  @@unique([number, officeId])    // FIX: was global @unique
+  @@unique([number, officeId])
   @@index([officeId])
   @@index([clientId])
+  @@index([userId])
+  @@index([cashSessionId])
   @@index([status])
   @@index([createdAt])
   @@map("sales")
@@ -1153,4 +1164,49 @@ model TokenBlacklist {
 
   @@index([jti])
   @@index([expiresAt])
+}
+
+// =============================================
+// CAIXA / OPERAÇÃO DE TURNO (PDV)
+// =============================================
+
+model CashSession {
+  id              String         @id @default(cuid())
+  openedAt        DateTime       @default(now())
+  closedAt        DateTime?
+  initialBalance  Decimal        @default(0)
+  finalBalance    Decimal?
+  expectedBalance Decimal?
+  status          String         @default("ABERTO") // ABERTO, FECHADO
+  obs             String?
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  officeId        String
+  office          Office         @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  sales           Sale[]
+  movements       CashMovement[]
+
+  @@index([officeId])
+  @@index([userId])
+  @@index([status])
+  @@map("cash_sessions")
+}
+
+model CashMovement {
+  id          String      @id @default(cuid())
+  type        String      // SUPRIMENTO (Aporte de troco), SANGRIA (Retirada)
+  amount      Decimal
+  description String
+  sessionId   String
+  session     CashSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  officeId    String
+  office      Office      @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  createdAt   DateTime    @default(now())
+
+  @@index([sessionId])
+  @@index([officeId])
+  @@map("cash_movements")
 }

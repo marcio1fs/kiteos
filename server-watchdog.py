@@ -31,22 +31,18 @@ def log(msg):
 
 def ensure_env():
     """Make sure .env has JWT_SECRET"""
+    if not os.path.exists(ENV_FILE):
+        log("ERROR: .env file not found.")
+        sys.exit(1)
     try:
         with open(ENV_FILE, 'r') as f:
             content = f.read()
-        changed = False
-        if "JWT_SECRET" not in content:
-            content += "\nJWT_SECRET=k1te0s-s3cur3-jwt-pr0duct10n-2024-z-s3cr3t-k3y\n"
-            changed = True
-        if "NEXTAUTH_SECRET" not in content:
-            content += "NEXTAUTH_SECRET=k1te0s-s3cur3-nextauth-2024-z-s3cr3t-k3y\n"
-            changed = True
-        if changed:
-            with open(ENV_FILE, 'w') as f:
-                f.write(content)
-            log("Updated .env with JWT_SECRET/NEXTAUTH_SECRET")
+        if "JWT_SECRET" not in content or "NEXTAUTH_SECRET" not in content:
+            log("ERROR: JWT_SECRET or NEXTAUTH_SECRET not found in .env")
+            sys.exit(1)
     except Exception as e:
-        log(f"Error updating .env: {e}")
+        log(f"Error reading .env: {e}")
+        sys.exit(1)
 
 def is_server_running():
     """Check if the Node.js server is running and responding"""

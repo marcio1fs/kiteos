@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rotateRefreshToken, auditLog } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/auth/refresh
@@ -8,8 +9,11 @@ import { rotateRefreshToken, auditLog } from '@/lib/auth';
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { refreshToken } = body;
+    let body: { refreshToken?: string } = {};
+    try {
+      body = await request.json();
+    } catch (e) {}
+    const refreshToken = request.cookies.get('kiteos_refresh')?.value || body.refreshToken;
 
     if (!refreshToken || typeof refreshToken !== 'string') {
       return NextResponse.json(
@@ -28,11 +32,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: {
-        token: result.token,
-        refreshToken: result.refreshToken,
+        token: result.token, // DEPRECATED: Use HttpOnly cookie instead
+        refreshToken: result.refreshToken, // DEPRECATED: Use HttpOnly cookie instead
         user: {
           id: result.payload.userId,
           role: result.payload.role,
@@ -40,8 +44,26 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    response.cookies.set('kiteos_token', result.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 8 * 60 * 60, // 8 hours
+    });
+
+    response.cookies.set('kiteos_refresh', result.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/auth/refresh',
+      maxAge: 7 * 24 * 60 * 60, // 7 days
+    });
+
+    return response;
   } catch (error) {
-    console.error('Token refresh error:', error);
+    logger.error('Token refresh error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao renovar token' },
       { status: 500 }

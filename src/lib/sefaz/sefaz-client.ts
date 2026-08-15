@@ -7,6 +7,7 @@
 import { getSefazEndpoint, getUfFromChave, type Ambiente } from './endpoints'
 import { buildConsultaProtocoloEnvelope, buildDownloadNfeEnvelope, buildStatusServicoEnvelope } from './soap-builder'
 import { parseConsultaProtocoloResponse, parseDownloadNfeResponse, parseStatusServicoResponse, mapSefazErrorToFriendly, type SefazConsultaResult, type SefazDownloadResult } from './response-parser'
+import { sefazSoapRequest } from './mtls-client'
 
 // Configurações
 const TIMEOUT_MS = 15000  // 15 segundos
@@ -17,6 +18,8 @@ export interface SefazClientConfig {
   ambiente: Ambiente
   uf?: string           // UF override (se não informado, extrai da chave)
   cnpjCpf: string       // CNPJ/CPF do certificado
+  pfx?: string | Buffer // Arquivo PFX para mTLS
+  passphrase?: string   // Senha do certificado
   timeout?: number      // Timeout em ms
   maxRetries?: number   // Máximo de tentativas
 }
@@ -78,20 +81,14 @@ export async function consultaProtocolo(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-      const response = await fetch(endpoint.consulta, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/soap+xml; charset=utf-8',
-          'SOAPAction': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4/nfeConsultaNF',
-        },
+      const response = await sefazSoapRequest({
+        url: endpoint.consulta,
         body: soapEnvelope,
-        signal: controller.signal,
+        soapAction: 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4/nfeConsultaNF',
+        pfx: config.pfx,
+        passphrase: config.passphrase,
+        timeoutMs: timeout,
       })
-
-      clearTimeout(timeoutId)
 
       if (!response.ok) {
         lastError = `HTTP ${response.status}: ${response.statusText}`
@@ -108,7 +105,7 @@ export async function consultaProtocolo(
         break
       }
 
-      const responseBody = await response.text()
+      const responseBody = response.body
       const result = parseConsultaProtocoloResponse(responseBody)
       const tempoResposta = Date.now() - startTime
 
@@ -185,20 +182,14 @@ export async function downloadNfe(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-      const response = await fetch(endpoint.download, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/soap+xml; charset=utf-8',
-          'SOAPAction': 'http://www.portalfiscal.inf.br/nfe/wsdl/NfeDownloadNF4/nfeDownloadNF',
-        },
+      const response = await sefazSoapRequest({
+        url: endpoint.download,
         body: soapEnvelope,
-        signal: controller.signal,
+        soapAction: 'http://www.portalfiscal.inf.br/nfe/wsdl/NfeDownloadNF4/nfeDownloadNF',
+        pfx: config.pfx,
+        passphrase: config.passphrase,
+        timeoutMs: timeout,
       })
-
-      clearTimeout(timeoutId)
 
       if (!response.ok) {
         lastError = `HTTP ${response.status}: ${response.statusText}`
@@ -211,7 +202,7 @@ export async function downloadNfe(
         break
       }
 
-      const responseBody = await response.text()
+      const responseBody = response.body
       const result = parseDownloadNfeResponse(responseBody)
       const tempoResposta = Date.now() - startTime
 
@@ -267,20 +258,14 @@ export async function consultaStatusServico(
   const soapEnvelope = buildStatusServicoEnvelope(config.ambiente, config.uf)
 
   try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-    const response = await fetch(endpoint.statusServico, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/soap+xml; charset=utf-8',
-        'SOAPAction': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeStatusServico4/nfeStatusServicoNF',
-      },
+    const response = await sefazSoapRequest({
+      url: endpoint.statusServico,
       body: soapEnvelope,
-      signal: controller.signal,
+      soapAction: 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeStatusServico4/nfeStatusServicoNF',
+      pfx: config.pfx,
+      passphrase: config.passphrase,
+      timeoutMs: timeout,
     })
-
-    clearTimeout(timeoutId)
 
     if (!response.ok) {
       return {
@@ -290,7 +275,7 @@ export async function consultaStatusServico(
       }
     }
 
-    const responseBody = await response.text()
+    const responseBody = response.body
     const result = parseStatusServicoResponse(responseBody)
     const tempoResposta = Date.now() - startTime
 

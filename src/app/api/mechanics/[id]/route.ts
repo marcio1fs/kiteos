@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 
@@ -36,7 +37,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: mechanic })
   } catch (error) {
-    console.error('Error getting mechanic:', error)
+    logger.error('Error getting mechanic:', { error: error instanceof Error ? error.message : String(error) })
     return NextResponse.json({ success: false, error: 'Erro ao buscar mecânico' }, { status: 500 })
   }
 }
@@ -85,7 +86,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: mechanic })
   } catch (error) {
-    console.error('Error updating mechanic:', error)
+    logger.error('Error updating mechanic:', { error: error instanceof Error ? error.message : String(error) })
     return NextResponse.json({ success: false, error: 'Erro ao atualizar mecânico' }, { status: 500 })
   }
 }
@@ -119,7 +120,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, data: { id } })
   } catch (error) {
-    console.error('Error deleting mechanic:', error)
+    logger.error('Error deleting mechanic:', { error: error instanceof Error ? error.message : String(error) })
     return NextResponse.json({ success: false, error: 'Erro ao excluir mecânico' }, { status: 500 })
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import MercadoPagoConfig, { Payment, Preference } from 'mercadopago';
 import { decryptToken } from '@/lib/token-encryption';
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
           },
         });
       } catch (pixError: unknown) {
-        console.error('PIX payment creation error:', pixError);
+        logger.error('PIX payment creation error', { pixError: pixError instanceof Error ? pixError.message : String(pixError) });
         const errMsg = pixError instanceof Error ? pixError.message : 'Erro ao criar pagamento PIX';
         return NextResponse.json(
           { success: false, error: `Erro no pagamento PIX: ${errMsg}` },
@@ -171,7 +172,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: unknown) {
-    console.error('Error creating MP payment:', error);
+    logger.error('Error creating MP payment', { error: error instanceof Error ? error.message : String(error) });
     const errMsg = error instanceof Error ? error.message : 'Erro ao criar pagamento';
     return NextResponse.json(
       { success: false, error: errMsg },

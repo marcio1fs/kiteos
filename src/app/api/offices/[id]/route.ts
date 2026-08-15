@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 
@@ -44,7 +45,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Office GET error: [REDACTED]')
+    logger.error('Office GET error: [REDACTED]', { error: error instanceof Error ? error.message : String(error) })
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 })
   }
 }
@@ -120,7 +121,7 @@ export async function PUT(
       },
     })
   } catch (error) {
-    console.error('Office PUT error: [REDACTED]')
+    logger.error('Office PUT error: [REDACTED]', { error: error instanceof Error ? error.message : String(error) })
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 })
   }
 }

@@ -1,6 +1,5 @@
 #!/bin/bash
 # KiteOS Server Daemon - keeps the server alive
-trap "" SIGHUP SIGTERM SIGINT
 
 generate_secret() {
   if command -v openssl >/dev/null 2>&1; then

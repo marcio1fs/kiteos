@@ -190,3 +190,20 @@ export function maskSensitiveData(data: string): string {
   if (!data || data.length < 1) return '***REDACTED***'
   return '***REDACTED***'
 }
+
+/**
+ * Valida o arquivo PFX e a senha, extraindo dados do certificado (validade, CNPJ, Razão Social)
+ */
+export function getCertificateDetails(base64Content: string, password: string) {
+  const { extractPfxData } = require('./xml-signer')
+  const certData = extractPfxData(base64Content, password)
+
+  return {
+    valid: true,
+    validade: certData.notAfter,
+    dataInicio: certData.notBefore,
+    cnpjCpf: certData.subject.cnpjCpf || null,
+    razaoSocial: certData.subject.organization || certData.subject.commonName || null,
+    emissor: certData.issuer.organization || certData.issuer.commonName || null,
+  }
+}
