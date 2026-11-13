@@ -4,8 +4,11 @@ Escopo: item **1** do `RELATORIO-AUDITORIA.md` ("Banco real: migrations versiona
 PostgreSQL e rodar testes de integração/concorrência"), conforme escolha do usuário ("sim 1").
 Nenhum outro item do roadmap foi tocado.
 
-Estado: **implementado e executado** neste sandbox contra um PostgreSQL 17.11 real. As
-limitações do ambiente — o que **não** pôde ser validado aqui — estão listadas na seção 6.
+Estado: **implementado, executado neste sandbox contra um PostgreSQL 17.11 real e validado
+no GitHub Actions** (run [`43344029849`](https://github.com/marcio1fs/kiteos/actions/runs/43344029849),
+commit `048dfd7`, ambos os jobs verdes) — inclusive o check canônico do Prisma
+(`migrate deploy` + `migrate diff --exit-code`), que não roda neste sandbox. O que continua
+sem poder ser executado aqui está na seção 6.
 
 ---
 
@@ -155,16 +158,25 @@ npm run test:integration       # DATABASE_URL=postgresql://kiteos:kiteos@localho
    --exit-code` — falha o build se alguém editar o schema sem criar migration;
 4. `npm run test:integration`.
 
-O job `quality` roda `prisma generate`, `prisma validate`, `npm run typecheck`, `npm run lint`,
-os testes do produto e os de aceitação. `next build` **não** é gateado — falha ao buscar Google
-Fonts e o `start` depende de `bun`; isso é o passo 2 do roadmap e está anotado no próprio
-workflow.
+O job `quality` roda `prisma generate`, `npm run typecheck`, `npm run lint`, os testes do
+produto e os de aceitação. Ele recebe uma `DATABASE_URL` sintaticamente válida porque
+`src/lib/db.ts` instancia um `PrismaClient` no import — nenhuma suíte desse job abre conexão.
+`next build` **não** é gateado: falha ao buscar Google Fonts e o `start` depende de `bun`; isso
+é o passo 2 do roadmap e está anotado no próprio workflow.
+
+**`prisma validate` saiu do gate** depois do primeiro run: ele baixou o binário do schema engine,
+falhou e pulou todos os steps seguintes (typecheck, lint e as duas suítes nem rodaram). A validade
+do schema já é gateada duas vezes — `prisma generate` falha com schema inválido, e o job de banco
+parseia o `schema.prisma` de novo no diff — então o `validate` ficou apenas como diagnóstico
+não-bloqueante, que republica a saída como anotação do check (o log bruto do job não é acessível
+deste sandbox).
 
 ---
 
-## 6. O que NÃO foi validado aqui (limitações reais do sandbox)
+## 6. O que NÃO foi validado neste sandbox (limitações reais do ambiente)
 
-Nada abaixo foi executado; não está declarado como validado.
+Nada abaixo foi executado **aqui**. Itens 1 e 3 foram depois executados pelo GitHub Actions
+(seção 7.1) — o que segue descreve o limite do sandbox, não o estado do projeto.
 
 1. **`prisma migrate deploy`, `prisma migrate diff --exit-code` e `prisma generate` não rodam
    neste sandbox.** Os engines nativos do Prisma vêm de `binaries.prisma.sh`, que não está na
@@ -176,12 +188,13 @@ Nada abaixo foi executado; não está declarado como validado.
    usam `pg` + o `PlanStore` backed por SQL. O que o Prisma geraria de SQL foi reproduzido
    literalmente nos testes (predicate de saldo, CAS de `version`, `ON CONFLICT` do sequenciador,
    CAS de status), mas o cliente em si só é coberto pelo CI.
-2. **A verificação executada é estrutural e independente** (DMMF ↔ catálogo do PG real), não o
-   check canônico do Prisma. Ela é estrita o bastante para pegar uma migration que não reproduz
-   o schema, mas quem assina embaixo oficialmente é o gate de drift no CI.
-3. **O workflow do GitHub Actions foi entregue, não executado.** Nenhum push foi feito a partir
-   daqui e o Actions não roda neste sandbox. A sintaxe YAML foi validada por parser; o
-   comportamento dos steps, não.
+2. **A verificação local é estrutural e independente** (DMMF ↔ catálogo do PG real), não o check
+   canônico do Prisma — que **rodou e passou no CI** (`migrate deploy` + `migrate diff
+   --exit-code` com engines nativos reais). As duas verificações concordam.
+3. **O GitHub Actions não roda neste sandbox** — os binários dos engines e o Google Fonts estão
+   fora da allowlist de rede. O workflow foi executado de verdade no GitHub depois do push da
+   branch; os logs brutos dos jobs, porém, ficam num host (`results-receiver.actions…`) que este
+   sandbox não alcança, então o diagnóstico é lido pelas anotações do check run.
 4. **`docker compose` não foi executado** (não há docker no sandbox). O PostgreSQL usado nos
    testes foi um cluster 17.11 portátil iniciado com `initdb`/`pg_ctl`, na porta 5433.
 5. **`npm test` do produto continua dependendo de `prisma generate`** (`globalSetup` no
@@ -203,7 +216,37 @@ Nada abaixo foi executado; não está declarado como validado.
 | Lint dos arquivos novos | `eslint vitest.integration.config.ts src/__tests__/integration` | exit 0 |
 | Lint do repo inteiro | `npm run lint` | **exit 0 — 0 erros**, 26 warnings (baseline anterior: 6 erros) |
 
-Evidências brutas em `audit/evidence/`: `migrations-verify-postgres.log`,
+### 7.1 Validação no GitHub Actions (o que o sandbox não consegue executar)
+
+Run [`43344029849`](https://github.com/marcio1fs/kiteos/actions/runs/43344029849),
+commit `048dfd7`, branch `arena/262c9bf1-kiteos` — **conclusão: success**, os dois jobs.
+
+| Job | Steps | Resultado |
+| --- | --- | --- |
+| `Migrations e concorrência (PostgreSQL 17)` | criar shadow database → **`prisma migrate deploy`** → **gate de drift (`migrate diff --exit-code`)** → testes de integração | **success** (57s), todos os steps |
+| `Tipos, lint e testes` | `npm ci` → `prisma generate` → `typecheck` → `lint` → testes do produto → testes de aceitação → diagnóstico | **success** (1m19s), todos os steps |
+
+Isto fecha exatamente o que a seção 6 dizia não ser possível executar aqui: os **engines nativos
+do Prisma** aplicaram a baseline `0_init` num PostgreSQL 17 limpo e o diff
+`migrations → schema.prisma` não acusou diferença (`--exit-code` = 0). O verificador offline da
+seção 2 e o gate canônico do Prisma concordam.
+
+Versões reportadas pelo runner, confirmando que a baseline foi gerada pelo **mesmo build de
+engine** que o projeto usa:
+
+```
+prisma                  : 6.19.3
+@prisma/client          : 6.19.2
+PSL                     : @prisma/prisma-schema-wasm 7.1.1-3.c2990dca591cba766e3b7ef5d9e8a84796e47ab7
+Query Engine (Node-API) : libquery-engine c2990dca591cba766e3b7ef5d9e8a84796e47ab7
+Node.js                 : v22.23.4 | TypeScript 5.9.3 | debian-openssl-3.0.x
+```
+
+O primeiro run (`43343039111`) falhou no step `prisma validate` e pulou typecheck/lint/testes —
+corrigido como descrito na seção 5; o job de banco já passou de primeira nesse run.
+
+Evidências brutas em `audit/evidence/`: `ci-run-43344029849.log` (run verde),
+`ci-run-43343039111.log` (run com a falha do `validate`), `migrations-verify-postgres.log`,
 `integration-postgres-real.log`, `acceptance-fase3-banco.log`, `product-tests-fase3-banco.log`,
 `typecheck-fase3-banco.log`, `lint-integration-fase3.log`, `lint-repo-fase3-banco.log`.
 

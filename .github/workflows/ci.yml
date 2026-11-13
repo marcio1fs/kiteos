@@ -53,11 +53,10 @@ jobs:
       # --to-schema-datamodel` below), so it stays only as a non-blocking
       # diagnostic — and its output is republished as check annotations so it can
       # be read without downloading the job log.
-      - name: Diagnóstico não bloqueante (prisma version/validate)
+      - name: Diagnóstico não bloqueante (prisma validate)
         if: always()
         run: |
-          npx prisma version 2>&1 | sed 's/^/::notice title=prisma-version::/' || true
-          npx prisma validate 2>&1 | sed 's/^/::notice title=prisma-validate::/' || true
+          npx prisma validate 2>&1 | head -8 | sed 's/^/::notice title=prisma-validate::/' || true
 
   # Real PostgreSQL: migrations must apply cleanly, must still match
   # schema.prisma (drift gate) and the concurrency invariants must hold.
