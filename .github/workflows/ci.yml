@@ -30,10 +30,15 @@ jobs:
 
       - run: npm ci
 
-      # An invalid schema fails here, so this doubles as the schema-validity gate
-      # (the database job parses schema.prisma again for the drift gate).
+      # An invalid schema fails here, so this doubles as a schema-validity gate.
       - name: Gerar Prisma Client
         run: npx prisma generate
+
+      # Canonical schema validation. It downloads the schema-engine binary, which
+      # failed transiently on the very first run of this workflow and took the rest
+      # of the job with it — hence the single retry.
+      - name: Validar schema.prisma
+        run: npx prisma validate || (sleep 15 && npx prisma validate)
 
       - name: Typecheck
         run: npm run typecheck
@@ -47,16 +52,6 @@ jobs:
       - name: Testes de aceitação
         run: npm run test:acceptance -- --reporter=verbose
 
-      # `prisma validate` needs the schema-engine binary and failed on the first
-      # run of this workflow, skipping every step after it. Schema validity is
-      # gated twice already (`prisma generate` above and `migrate diff
-      # --to-schema-datamodel` below), so it stays only as a non-blocking
-      # diagnostic — and its output is republished as check annotations so it can
-      # be read without downloading the job log.
-      - name: Diagnóstico não bloqueante (prisma validate)
-        if: always()
-        run: |
-          npx prisma validate 2>&1 | head -8 | sed 's/^/::notice title=prisma-validate::/' || true
 
   # Real PostgreSQL: migrations must apply cleanly, must still match
   # schema.prisma (drift gate) and the concurrency invariants must hold.

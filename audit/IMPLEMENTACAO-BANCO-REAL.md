@@ -164,12 +164,17 @@ produto e os de aceitação. Ele recebe uma `DATABASE_URL` sintaticamente válid
 `next build` **não** é gateado: falha ao buscar Google Fonts e o `start` depende de `bun`; isso
 é o passo 2 do roadmap e está anotado no próprio workflow.
 
-**`prisma validate` saiu do gate** depois do primeiro run: ele baixou o binário do schema engine,
-falhou e pulou todos os steps seguintes (typecheck, lint e as duas suítes nem rodaram). A validade
-do schema já é gateada duas vezes — `prisma generate` falha com schema inválido, e o job de banco
-parseia o `schema.prisma` de novo no diff — então o `validate` ficou apenas como diagnóstico
-não-bloqueante, que republica a saída como anotação do check (o log bruto do job não é acessível
-deste sandbox).
+**`prisma validate`** falhou no primeiro run e pulou todos os steps seguintes (typecheck, lint e
+as duas suítes nem rodaram). Um step de diagnóstico não-bloqueante — que republica a saída como
+anotação do check, único canal legível deste sandbox, já que os logs brutos ficam num host fora
+da allowlist — mostrou a causa: na segunda execução o mesmo comando imprimiu
+`The schema at prisma/schema.prisma is valid 🚀`. Ou seja, falha **transitória** no download do
+binário do schema engine, não defeito do schema. O step voltou a ser gate, com um retry:
+
+```yaml
+- name: Validar schema.prisma
+  run: npx prisma validate || (sleep 15 && npx prisma validate)
+```
 
 ---
 
