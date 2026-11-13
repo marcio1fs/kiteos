@@ -105,6 +105,70 @@ jobs:
       - name: Testes de integração e concorrência
         run: npm run test:integration -- --reporter=verbose
 
-  # NOTE: `next build` is intentionally not gated yet — it fails on Google Fonts
-  # fetching at build time and the `start` script depends on bun. Both are
-  # tracked as step 2 (build/empacotamento) of the audit report.
+  # Production build — this is the step that used to fail outright:
+  # `next/font/google` fetched Geist from fonts.gstatic.com on every build.
+  build:
+    name: Build de produção
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://kiteos:kiteos@localhost:5432/kiteos_unused?schema=public
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # Fonts are vendored by the `geist` npm package (next/font/local). On a
+      # runner with network the old code would build fine, so this is the guard
+      # that actually keeps the build offline-safe.
+      - name: Nenhuma fonte pode depender de rede no build
+        run: |
+          if grep -rn "next/font/google" src/; then
+            echo "::error::next/font/google voltou — o build volta a depender de rede"
+            exit 1
+          fi
+
+      - name: Gerar Prisma Client
+        run: npx prisma generate
+
+      - name: Build de produção
+        run: npm run build
+
+      - name: Conferir a saída standalone
+        run: |
+          test -f .next/standalone/server.js
+          test -d .next/standalone/.next/static
+          test -d .next/standalone/public
+          ls .next/static/media/*.woff2
+          du -sh .next/standalone
+
+  # The deployable image: keeps Dockerfile and CI from drifting apart.
+  docker:
+    name: Imagem Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir a imagem
+        run: docker build -t kiteos:ci .
+
+      # .dockerignore is what keeps audit artifacts out of the image: Turbopack's
+      # file tracer pulls the whole build context into .next/standalone.
+      - name: Conferir o conteúdo da imagem
+        run: |
+          docker run --rm --entrypoint sh kiteos:ci -c '
+            set -e
+            test -f /app/server.js
+            test -d /app/.next/static
+            test -d /app/public
+            test -d /app/prisma
+            test ! -e /app/audit
+            test ! -e /app/src/__tests__
+            node --version
+            du -sh /app
+          '

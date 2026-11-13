@@ -62,6 +62,10 @@ export async function GET(
     // Try to find the file in multiple locations
     const projectRoot = getProjectRoot()
     const cwd = process.cwd()
+    // NOTE: these runtime-resolved paths are why Turbopack's file tracer pulls the
+    // whole project into .next/standalone (77 MB). Both `turbopackIgnore` hints and
+    // `outputFileTracingExcludes` were tried and are IGNORED by the Turbopack build
+    // — measured, see audit/IMPLEMENTACAO-BUILD.md.
     const searchPaths = [
       path.join(cwd, 'public', 'uploads', 'logos', filename),
       path.join(projectRoot, 'public', 'uploads', 'logos', filename),

@@ -101,8 +101,14 @@ após estas correções.
    status, sequência única, unicidade de venda por tenant, revogação de refresh
    token, limite de plano com trava transacional), CI com gate de drift e
    `docker-compose` para o banco local.
-2. **Build/deploy**: build ainda depende de Google Fonts e o `start` usa bun;
-   alinhar Dockerfile/CI e validar `next build` em ambiente com rede.
+2. ~~**Build/deploy**: build ainda depende de Google Fonts e o `start` usa bun;
+   alinhar Dockerfile/CI e validar `next build` em ambiente com rede.~~ **Concluído**
+   — ver `IMPLEMENTACAO-BUILD.md`: fontes vendored pelo pacote `geist`
+   (`next/font/local`, build offline com exit 0), `start` usando `node`, Dockerfile
+   em `node:22-alpine` (Node 20 está em EOL desde 2026-04-30), `.dockerignore`
+   impedindo o embarque de artefatos de auditoria e dois jobs novos no CI
+   (`build`, com gate contra a volta do `next/font/google`, e `docker`, que inspeciona
+   a imagem construída).
 3. **Estorno financeiro**: implementar fluxo explícito de estorno para vendas e
    lançamentos pagos antes de permitir cancelamento.
 4. ~~**Limites de plano**: aplicar enforcement de `maxOS/maxClients/maxParts` e

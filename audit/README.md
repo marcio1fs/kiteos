@@ -1,12 +1,14 @@
 # Auditoria KiteOS
 
-> **Atualização 2026-11-05:** três levas de correções implementadas.
+> **Atualização 2026-11-05:** quatro levas de correções implementadas.
 > - `IMPLEMENTACAO-FASE-1.md` — sessão, multi-tenant, vendas/PDV, OS, estoque,
 >   financeiro, webhooks Mercado Pago, SSRF e mTLS.
 > - `IMPLEMENTACAO-FASE-2-PLANOS.md` — limites e permissões de plano aplicados no
 >   servidor (item 4 do plano).
 > - `IMPLEMENTACAO-BANCO-REAL.md` — migrations versionadas, PostgreSQL 17 real,
 >   testes de integração/concorrência, CI com gate de drift (item 1 do plano).
+> - `IMPLEMENTACAO-BUILD.md` — fontes locais no lugar de Google Fonts, `start` sem
+>   `bun`, Dockerfile em Node 22, jobs de build e de imagem no CI (item 2 do plano).
 >
 > Testes de aceitação: `npm run test:acceptance` (**96 testes**, Prisma mockado).
 > Integração: `npm run test:integration` (**13 testes**, PostgreSQL real; pulam sem

@@ -5,3 +5,28 @@ node_modules
 *.md
 .dockerignore
 Dockerfile
+
+# Artefatos de desenvolvimento/auditoria que não devem embarcar na imagem.
+# O file tracer do Turbopack puxa o projeto inteiro para dentro de
+# .next/standalone (medido: 77 MB, com src/, audit/, examples/ e shell scripts
+# soltos) e ignora tanto os hints `turbopackIgnore` quanto
+# `outputFileTracingExcludes` — então o que realmente impede o embarque é manter
+# esses caminhos fora do contexto de build. Ver audit/IMPLEMENTACAO-BUILD.md.
+.github
+.zscripts
+agent-ctx
+audit
+docker
+download
+examples
+scripts
+src/__tests__
+upload
+Caddyfile
+bun.lock
+docker-compose.yml
+*.py
+*.sh
+vitest.setup.ts
+vitest*.config.ts
+

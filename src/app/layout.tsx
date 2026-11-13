@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+// Local fonts (npm package `geist`, woff2 files shipped with it) instead of
+// `next/font/google`, which fetched from fonts.gstatic.com on EVERY build and
+// broke offline/air-gapped builds — `next build` failed outright with
+// "Failed to fetch `Geist` from Google Fonts".
+// The package exposes the very same CSS variables globals.css already consumes.
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "KiteOS - Sistema de Gestão para Oficinas Mecânicas",
@@ -36,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${GeistSans.variable} ${GeistMono.variable} antialiased bg-background text-foreground`}
       >
         {children}
         <Toaster />
