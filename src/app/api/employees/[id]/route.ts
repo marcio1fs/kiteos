@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { hashPassword, requireAuth, validatePasswordStrength } from '@/lib/auth';
+import { hashPassword, requireAuth, validatePasswordStrength, addToTokenBlacklist, revokeAllUserTokens } from '@/lib/auth';
 
 // GET /api/employees/[id]
 export async function GET(
@@ -212,7 +212,7 @@ export async function PUT(
     }
 
     const updatedUser = await db.user.update({
-      where: { id },
+      where: { id, officeId },
       data: updateData,
       select: {
         id: true,
@@ -224,6 +224,12 @@ export async function PUT(
         updatedAt: true,
       },
     });
+
+    // Security-sensitive changes invalidate already-issued JWTs and refresh tokens.
+    if (updateData.active === false || updateData.password || updateData.role || updateData.email) {
+      await revokeAllUserTokens(id);
+      await addToTokenBlacklist(id, officeId, updateData.active === false ? 'ACCOUNT_DEACTIVATED' : 'CREDENTIALS_CHANGED');
+    }
 
     return NextResponse.json({
       success: true,
@@ -286,10 +292,17 @@ export async function DELETE(
       );
     }
 
-    // Soft delete
-    await db.user.update({
-      where: { id },
-      data: { deleted: true, active: false },
+    // Soft delete and revoke sessions together; requireAuth also revalidates the
+    // active/deleted flags on every request as a second line of defense.
+    await db.$transaction(async (tx) => {
+      await tx.user.update({ where: { id, officeId }, data: { deleted: true, active: false } });
+      await tx.refreshToken.updateMany({
+        where: { userId: id, isRevoked: false },
+        data: { isRevoked: true, revokedAt: new Date(), reason: 'ACCOUNT_DEACTIVATED' },
+      });
+      await tx.tokenBlacklist.create({
+        data: { jti: `${id}:${Date.now()}`, userId: id, officeId, reason: 'ACCOUNT_DEACTIVATED', expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000) },
+      });
     });
 
     return NextResponse.json({

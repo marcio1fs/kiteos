@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { isValidNCM, isValidCFOP } from '@/lib/server-validators';
 import { requireAuth } from '@/lib/auth';
+import { assertCanCreate, isPlanError, planErrorBody } from '@/lib/plans';
 
 // GET /api/parts - List parts
 export async function GET(request: NextRequest) {
@@ -215,30 +216,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const part = await db.part.create({
-      data: {
-        sku,
-        description,
-        ncm: ncm || null,
-        cfop: cfop || null,
-        unit: unit || 'UN',
-        quantity: quantity || 0,
-        minQuantity: minQuantity || 0,
-        costPrice: costPrice || 0,
-        salePrice: salePrice || 0,
-        location: location || null,
-        batch: batch || null,
-        validity: validity ? new Date(validity) : null,
-        cst: cst || null,
-        csosn: csosn || null,
-        supplierId: supplierId || null,
-        officeId,
-      },
-      include: {
-        supplier: {
-          select: { id: true, razaoSocial: true, nomeFantasia: true },
+    // Plan limit is checked in the same transaction as the INSERT.
+    const part = await db.$transaction(async (tx) => {
+      await assertCanCreate(tx, officeId, 'PART');
+      return tx.part.create({
+        data: {
+          sku,
+          description,
+          ncm: ncm || null,
+          cfop: cfop || null,
+          unit: unit || 'UN',
+          quantity: quantity || 0,
+          minQuantity: minQuantity || 0,
+          costPrice: costPrice || 0,
+          salePrice: salePrice || 0,
+          location: location || null,
+          batch: batch || null,
+          validity: validity ? new Date(validity) : null,
+          cst: cst || null,
+          csosn: csosn || null,
+          supplierId: supplierId || null,
+          officeId,
         },
-      },
+        include: {
+          supplier: {
+            select: { id: true, razaoSocial: true, nomeFantasia: true },
+          },
+        },
+      });
     });
 
     // Create audit log
@@ -254,6 +259,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: part }, { status: 201 });
   } catch (error) {
+    if (isPlanError(error)) return NextResponse.json(planErrorBody(error).body, { status: error.status });
     logger.error('Error creating part: [REDACTED]', { error: error instanceof Error ? error.message : String(error) });
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002') {

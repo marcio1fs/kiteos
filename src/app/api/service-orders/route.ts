@@ -3,7 +3,11 @@ import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { requireAuth } from '@/lib/auth';
-import { generateNextNumber } from '@/lib/numbering';
+import { osItemSchema } from '@/lib/service-orders';
+import { formatDocumentNumber } from '@/lib/sales';
+import { CommercialError, commercialErrorResponse, adjustStock, idSchema, moneySchema, paymentMethodSchema, toCents, fromCents } from '@/lib/commercial';
+import { assertCanCreate, isPlanError, planErrorBody } from '@/lib/plans';
+import { z } from 'zod';
 
 // GET /api/service-orders - List service orders
 export async function GET(request: NextRequest) {
@@ -76,229 +80,120 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/service-orders - Create service order
+const createOsSchema = z.object({
+  officeId: idSchema,
+  clientId: idSchema,
+  vehicleId: idSchema,
+  description: z.string().max(2000).nullish(),
+  diagnosis: z.string().max(5000).nullish(),
+  totalDiscount: moneySchema.default(0),
+  paymentMethod: paymentMethodSchema.nullish(),
+  items: z.array(osItemSchema).min(1).max(200),
+}).strict();
+
+// POST /api/service-orders - Create service order with atomic stock reservation
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const {
-      officeId,
-      clientId,
-      vehicleId,
-      description,
-      diagnosis,
-      totalDiscount = 0,
-      paymentMethod,
-      items = [],
-    } = body;
+    const input = createOsSchema.parse(await request.json());
+    const auth = await requireAuth(request, input.officeId);
+    if (!auth.payload) return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
 
-    // Validate required fields
-    if (!officeId || !clientId || !vehicleId) {
-      return NextResponse.json(
-        { success: false, error: 'officeId, clientId e vehicleId são obrigatórios' },
-        { status: 400 }
-      );
-    }
-
-    const auth = await requireAuth(request, officeId);
-    if (!auth.payload) {
-      return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
-    }
-
-    if (!items || items.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Pelo menos um item é obrigatório' },
-        { status: 400 }
-      );
-    }
-
-    // Validate client and vehicle belong to office
-    const client = await db.client.findFirst({
-      where: { id: clientId, officeId, deleted: false },
-    });
-    if (!client) {
-      return NextResponse.json(
-        { success: false, error: 'Cliente não encontrado' },
-        { status: 404 }
-      );
-    }
-
-    const vehicle = await db.vehicle.findFirst({
-      where: { id: vehicleId, officeId, deleted: false },
-    });
-    if (!vehicle) {
-      return NextResponse.json(
-        { success: false, error: 'Veículo não encontrado' },
-        { status: 404 }
-      );
-    }
-
-    // Validate PECA items - check parts exist and have stock
-    for (const item of items) {
-      if (item.type === 'PECA') {
-        if (!item.partId) {
-          return NextResponse.json(
-            { success: false, error: `Item "${item.description}" do tipo PECA requer partId` },
-            { status: 400 }
-          );
-        }
-        const part = await db.part.findFirst({
-          where: { id: item.partId, officeId, deleted: false },
-        });
-        if (!part) {
-          return NextResponse.json(
-            { success: false, error: `Peça não encontrada: ${item.partId}` },
-            { status: 404 }
-          );
-        }
-        if (part.quantity < item.quantity) {
-          return NextResponse.json(
-            {
-              success: false,
-              error: `Estoque insuficiente para "${part.description}". Disponível: ${part.quantity}, Solicitado: ${item.quantity}`,
-            },
-            { status: 400 }
-          );
-        }
-      }
-    }
-
-    // Auto-generate OS number: A001, A002, ..., A999, B001, ... — AUD-02 FIX: scoped to this office
-    const finalNumber = await generateNextNumber('serviceOrder', officeId);
-
-    // Calculate totals from items
-    let totalParts = 0;
-    let totalServices = 0;
-
-    const processedItems = items.map((item: {
-      type: string;
-      description: string;
-      quantity: number;
-      unitPrice: number;
-      partId?: string;
-      mechanicId?: string;
-      commissionPct?: number;
-    }) => {
-      const totalPrice = item.quantity * item.unitPrice;
-      if (item.type === 'PECA') {
-        totalParts += totalPrice;
-      } else {
-        totalServices += totalPrice;
-      }
-      // Calculate commission for service items with mechanic
-      const commPct = item.type === 'SERVICO' && item.mechanicId ? (item.commissionPct ?? 0) : 0;
-      const commValue = totalPrice * (commPct / 100);
-      return {
-        type: item.type,
-        description: item.description,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice,
-        partId: item.partId || null,
-        mechanicId: item.mechanicId || null,
-        commissionPct: commPct,
-        commissionValue: commValue,
-        officeId,
-      };
-    });
-
-    const totalAmount = totalParts + totalServices - totalDiscount;
-
-    // Create service order with items in a transaction (with stock deduction for PECA items)
     const serviceOrder = await db.$transaction(async (tx) => {
+      // Plan limits are enforced here, inside the write transaction, so the count
+      // cannot go stale between the check and the INSERT.
+      await assertCanCreate(tx, input.officeId, 'OS');
+
+      const client = await tx.client.findFirst({ where: { id: input.clientId, officeId: input.officeId, deleted: false } });
+      if (!client) throw new CommercialError('Cliente não encontrado nesta oficina', 404);
+      const vehicle = await tx.vehicle.findFirst({ where: { id: input.vehicleId, officeId: input.officeId, clientId: input.clientId, deleted: false } });
+      if (!vehicle) throw new CommercialError('Veículo não encontrado para este cliente', 404);
+
+      let totalPartsCents = 0;
+      let totalServicesCents = 0;
+      for (const item of input.items) {
+        const total = Math.round(toCents(item.unitPrice) * item.quantity);
+        if (item.type === 'PECA') {
+          totalPartsCents += total;
+          const part = await tx.part.findFirst({ where: { id: item.partId!, officeId: input.officeId, deleted: false } });
+          if (!part) throw new CommercialError(`Peça não encontrada nesta oficina: ${item.partId}`, 404);
+        } else {
+          totalServicesCents += total;
+          if (item.mechanicId) {
+            const mechanic = await tx.mechanic.findFirst({ where: { id: item.mechanicId, officeId: input.officeId, active: true, deleted: false } });
+            if (!mechanic) throw new CommercialError(`Mecânico não encontrado nesta oficina: ${item.mechanicId}`, 404);
+          }
+        }
+      }
+      const discountCents = toCents(input.totalDiscount);
+      if (discountCents > totalPartsCents + totalServicesCents) throw new CommercialError('Desconto não pode ser maior que o total da OS', 400);
+
+      const existing = await tx.serviceOrder.findMany({ where: { officeId: input.officeId }, select: { number: true } });
+      let max = 0;
+      for (const { number } of existing) {
+        const m = /^([A-Z])(\d{3})$/.exec(number);
+        if (m) max = Math.max(max, (m[1].charCodeAt(0) - 65) * 999 + Number(m[2]));
+      }
+      const seq = await tx.sequencer.upsert({
+        where: { officeId_entity: { officeId: input.officeId, entity: 'SERVICE_ORDER' } },
+        create: { officeId: input.officeId, entity: 'SERVICE_ORDER', currentValue: max + 1 },
+        update: { currentValue: { increment: 1 } },
+      });
+      let sequence = seq.currentValue;
+      if (sequence <= max) {
+        const bumped = await tx.sequencer.update({ where: { officeId_entity: { officeId: input.officeId, entity: 'SERVICE_ORDER' } }, data: { currentValue: max + 1 } });
+        sequence = bumped.currentValue;
+      }
+      const number = formatDocumentNumber(sequence);
+
       const os = await tx.serviceOrder.create({
         data: {
-          number: finalNumber,
-          status: 'ABERTA',
-          description,
-          diagnosis,
-          totalParts,
-          totalServices,
-          totalDiscount,
-          totalAmount,
-          paymentMethod,
-          clientId,
-          vehicleId,
-          officeId,
+          number, status: 'ABERTA', description: input.description, diagnosis: input.diagnosis,
+          totalParts: fromCents(totalPartsCents), totalServices: fromCents(totalServicesCents),
+          totalDiscount: fromCents(discountCents), totalAmount: fromCents(totalPartsCents + totalServicesCents - discountCents),
+          paymentMethod: input.paymentMethod, clientId: input.clientId, vehicleId: input.vehicleId, officeId: input.officeId,
           items: {
-            create: processedItems,
+            create: input.items.map(item => {
+              const total = Math.round(toCents(item.unitPrice) * item.quantity);
+              const commPct = item.type === 'SERVICO' && item.mechanicId ? (item.commissionPct ?? 0) : 0;
+              return {
+                type: item.type, description: item.description, quantity: item.quantity, unitPrice: item.unitPrice,
+                totalPrice: fromCents(total), partId: item.type === 'PECA' ? item.partId : null,
+                mechanicId: item.type === 'SERVICO' ? (item.mechanicId || null) : null,
+                commissionPct: commPct, commissionValue: fromCents(Math.round(total * commPct / 100)), officeId: input.officeId,
+              };
+            }),
           },
         },
-        include: {
-          client: true,
-          vehicle: true,
-          items: true,
-        },
+        include: { client: true, vehicle: true, items: true },
       });
 
-      // === DEDUCT STOCK FOR PECA ITEMS (baixa no estoque) ===
-      // SECURITY FIX (AUD-03): Added optimistic locking for stock deduction
-      // Previously used simple update — race condition could allow negative stock
-      const pecaItems = items.filter((item: { type: string; partId?: string }) => item.type === 'PECA' && item.partId);
-      for (const item of pecaItems) {
-        const part = await tx.part.findFirst({
-          where: { id: item.partId, officeId, deleted: false },
-        });
-        if (!part) continue;
-
-        // SECURITY FIX (AUD-03): Verify stock is sufficient INSIDE the transaction
-        if (Number(part.quantity) < Number(item.quantity)) {
-          throw new Error(`Estoque insuficiente para "${part.description}". Disponível: ${part.quantity}, Solicitado: ${item.quantity}`);
-        }
-
-        // Create SAIDA stock movement
-        await tx.stockMovement.create({
-          data: {
-            type: 'SAIDA',
-            quantity: item.quantity,
-            unitCost: part.costPrice,
-            reason: 'Baixa via Ordem de Serviço',
-            reference: finalNumber,
-            partId: part.id,
-            officeId,
-          },
-        });
-
-        // SECURITY FIX (AUD-03): Use optimistic locking (version) for stock deduction
-        const newQty = Number(part.quantity) - Number(item.quantity);
-        const updateResult = await tx.part.updateMany({
-          where: { id: part.id, version: part.version },
-          data: {
-            quantity: newQty,
-            version: { increment: 1 },
-          },
-        });
-
-        if (updateResult.count === 0) {
-          throw new Error(`Conflito de concorrência ao atualizar estoque de "${part.description}". Tente novamente.`);
+      for (const item of input.items) {
+        if (item.type === 'PECA' && item.partId) {
+          await adjustStock(tx, { officeId: input.officeId, partId: item.partId, delta: -item.quantity, reason: 'Baixa via Ordem de Serviço', reference: `OS:${os.id}` });
         }
       }
 
-      // Create notification for client
       if (client.phone || client.email) {
         await tx.notification.create({
           data: {
-            type: client.phone ? 'WHATSAPP' : 'EMAIL',
-            template: 'OS_CREATED',
-            title: 'Ordem de Serviço Criada',
-            message: `Sua Ordem de Serviço ${finalNumber} foi criada com sucesso. Valor total: R$ ${totalAmount.toFixed(2)}`,
-            recipient: client.phone || client.email,
-            status: 'PENDENTE',
-            serviceOrderId: os.id,
-            officeId,
+            type: client.phone ? 'WHATSAPP' : 'EMAIL', template: 'OS_CREATED', title: 'Ordem de Serviço Criada',
+            message: `Sua Ordem de Serviço ${number} foi criada com sucesso. Valor total: R$ ${fromCents(totalPartsCents + totalServicesCents - discountCents).toFixed(2)}`,
+            recipient: client.phone || client.email, status: 'PENDENTE', serviceOrderId: os.id, officeId: input.officeId,
           },
         });
       }
-
+      await tx.auditLog.create({
+        data: { action: 'CREATE', entity: 'ServiceOrder', entityId: os.id, details: JSON.stringify({ number }), userId: auth.payload.userId, officeId: input.officeId },
+      });
       return os;
     });
 
     return NextResponse.json({ success: true, data: serviceOrder }, { status: 201 });
   } catch (error) {
+    if (isPlanError(error)) return NextResponse.json(planErrorBody(error).body, { status: error.status });
+    const known = commercialErrorResponse(error);
+    if (known) return NextResponse.json(known.body, { status: known.status });
     logger.error('Error creating service order:', { error: error instanceof Error ? error.message : String(error) });
-    const errorMessage = error instanceof Error ? error.message : 'Erro ao criar ordem de serviço';
-    return NextResponse.json(
-      { success: false, error: errorMessage },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Erro ao criar ordem de serviço' }, { status: 500 });
   }
 }

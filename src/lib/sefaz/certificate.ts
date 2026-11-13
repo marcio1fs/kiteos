@@ -195,6 +195,9 @@ export function maskSensitiveData(data: string): string {
  * Valida o arquivo PFX e a senha, extraindo dados do certificado (validade, CNPJ, Razão Social)
  */
 export function getCertificateDetails(base64Content: string, password: string) {
+  // Lazy require on purpose: xml-signer imports this module, so a static import
+  // here would create a circular dependency at load time.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { extractPfxData } = require('./xml-signer')
   const certData = extractPfxData(base64Content, password)
 

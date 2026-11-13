@@ -3,6 +3,8 @@ import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { requireAuth } from '@/lib/auth';
+import { adjustStock, commercialErrorResponse, idSchema, moneySchema, quantitySchema } from '@/lib/commercial';
+import { z } from 'zod';
 
 // GET /api/stock-movements - List stock movements
 export async function GET(request: NextRequest) {
@@ -77,142 +79,50 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/stock-movements - Create stock movement
+const movementSchema = z.object({
+  officeId: idSchema,
+  partId: idSchema,
+  type: z.enum(['ENTRADA', 'SAIDA']),
+  quantity: quantitySchema,
+  unitCost: moneySchema.optional(),
+  reason: z.string().max(500).nullish(),
+  reference: z.string().max(200).nullish(),
+}).strict();
+
+// POST /api/stock-movements - Atomic, tenant-scoped stock movement
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const {
-      officeId,
-      partId,
-      type,
-      quantity,
-      unitCost,
-      reason,
-      reference,
-    } = body;
+    const input = movementSchema.parse(await request.json());
+    const auth = await requireAuth(request, input.officeId);
+    if (!auth.payload) return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
 
-    // Validate required fields
-    if (!officeId || !partId || !type || quantity === undefined) {
-      return NextResponse.json(
-        { success: false, error: 'officeId, partId, type e quantity são obrigatórios' },
-        { status: 400 }
-      );
-    }
-
-    const auth = await requireAuth(request, officeId);
-    if (!auth.payload) {
-      return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
-    }
-
-    if (!['ENTRADA', 'SAIDA'].includes(type)) {
-      return NextResponse.json(
-        { success: false, error: 'type deve ser ENTRADA ou SAIDA' },
-        { status: 400 }
-      );
-    }
-
-    if (quantity <= 0) {
-      return NextResponse.json(
-        { success: false, error: 'quantity deve ser maior que zero' },
-        { status: 400 }
-      );
-    }
-
-    // Check if part exists
-    const part = await db.part.findFirst({
-      where: { id: partId, officeId, deleted: false },
-    });
-
-    if (!part) {
-      return NextResponse.json(
-        { success: false, error: 'Peça não encontrada' },
-        { status: 404 }
-      );
-    }
-
-    // Validate no negative stock for SAIDA
-    if (type === 'SAIDA') {
-      const currentQuantity = parseFloat(String(part.quantity));
-      if (currentQuantity < quantity) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Estoque insuficiente para "${part.description}". Disponível: ${currentQuantity}, Solicitado: ${quantity}`,
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Create stock movement and update part quantity in transaction
     const result = await db.$transaction(async (tx) => {
-      const movement = await tx.stockMovement.create({
-        data: {
-          type,
-          quantity,
-          unitCost: unitCost || 0,
-          reason: reason || null,
-          reference: reference || null,
-          partId,
-          officeId,
-        },
-        include: {
-          part: {
-            select: {
-              id: true,
-              sku: true,
-              description: true,
-              unit: true,
-              quantity: true,
-            },
-          },
-        },
+      const { movement, previousQuantity, newQuantity, part } = await adjustStock(tx, {
+        officeId: input.officeId,
+        partId: input.partId,
+        delta: input.type === 'ENTRADA' ? input.quantity : -input.quantity,
+        reason: input.reason || 'Movimentação manual',
+        reference: input.reference || 'MANUAL',
+        unitCost: input.unitCost,
       });
-
-      // Update part quantity
-      const currentQty = parseFloat(String(part.quantity));
-      let newQuantity: number;
-
-      if (type === 'ENTRADA') {
-        newQuantity = currentQty + quantity;
-      } else {
-        newQuantity = currentQty - quantity;
-      }
-
-      await tx.part.update({
-        where: { id: partId },
-        data: { quantity: newQuantity },
-      });
-
-      // Create audit log
       await tx.auditLog.create({
         data: {
-          action: 'STOCK_MOVEMENT',
-          entity: 'StockMovement',
-          entityId: movement.id,
-          details: JSON.stringify({
-            partSku: part.sku,
-            partDescription: part.description,
-            type,
-            quantity,
-            previousQuantity: currentQty,
-            newQuantity,
-            reason: reason || null,
-            reference: reference || null,
-          }),
-          officeId,
+          action: 'STOCK_MOVEMENT', entity: 'StockMovement', entityId: movement.id,
+          details: JSON.stringify({ partSku: part.sku, type: input.type, quantity: input.quantity, previousQuantity, newQuantity }),
+          userId: auth.payload.userId, officeId: input.officeId,
         },
       });
-
-      return movement;
+      return tx.stockMovement.findFirst({
+        where: { id: movement.id, officeId: input.officeId },
+        include: { part: { select: { id: true, sku: true, description: true, unit: true, quantity: true } } },
+      });
     });
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (error) {
+    const known = commercialErrorResponse(error);
+    if (known) return NextResponse.json(known.body, { status: known.status });
     logger.error('Error creating stock movement:', { error: error instanceof Error ? error.message : String(error) });
-    return NextResponse.json(
-      { success: false, error: 'Erro ao criar movimentação de estoque' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Erro ao criar movimentação de estoque' }, { status: 500 });
   }
 }

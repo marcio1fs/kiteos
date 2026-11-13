@@ -1,30 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { requireAuth } from '@/lib/auth';
+import { requirePlatformAdmin } from '@/lib/auth';
 import { logger } from '@/lib/logger';
-
-// Plan definitions
-const PLANS: Record<string, {
-  maxOS: number;
-  maxClients: number;
-  maxParts: number;
-  aiAccess: boolean;
-  whatsapp: boolean;
-  price: number;
-  label: string;
-}> = {
-  FREE: { maxOS: 10, maxClients: 20, maxParts: 50, aiAccess: false, whatsapp: false, price: 0, label: 'Free' },
-  PRO: { maxOS: 100, maxClients: 200, maxParts: 500, aiAccess: true, whatsapp: false, price: 99.90, label: 'Pro' },
-  PRO_PLUS: { maxOS: 500, maxClients: 1000, maxParts: 2000, aiAccess: true, whatsapp: true, price: 199.90, label: 'Pro+' },
-  PREMIUM: { maxOS: -1, maxClients: -1, maxParts: -1, aiAccess: true, whatsapp: true, price: 349.90, label: 'Premium' },
-};
+import { PLANS, PLAN_KEYS, getPlan, isPlanKey } from '@/lib/plans';
 
 // GET /api/admin/subscriptions - Admin dashboard with all subscribers
 // SECURITY FIX: Added authentication and OWNER role requirement
 export async function GET(request: NextRequest) {
   try {
-    // SECURITY FIX: Require ADMIN or OWNER authentication
-    const auth = await requireAuth(request, undefined, 'ADMIN');
+    // Platform operations are independent of tenant roles (OWNER/ADMIN).
+    const auth = await requirePlatformAdmin(request);
     if (!auth.payload) {
       return NextResponse.json(
         { success: false, error: auth.error.message },
@@ -111,7 +96,7 @@ export async function GET(request: NextRequest) {
     const mrr = payingSubscribers.reduce((sum, sub) => sum + Number(sub.monthlyPrice), 0);
 
     // Revenue by plan
-    const revenueByPlan = Object.keys(PLANS).map(planKey => {
+    const revenueByPlan = PLAN_KEYS.map(planKey => {
       const planSubs = subscriptions.filter(s => s.plan === planKey && Number(s.monthlyPrice) > 0 && (s.status === 'ATIVA' || s.status === 'TRIAL'));
       return {
         plan: planKey,
@@ -122,7 +107,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Subscriber count by plan
-    const countByPlan = Object.keys(PLANS).map(planKey => ({
+    const countByPlan = PLAN_KEYS.map(planKey => ({
       plan: planKey,
       label: PLANS[planKey].label,
       count: subscriptions.filter(s => s.plan === planKey).length,
@@ -143,7 +128,7 @@ export async function GET(request: NextRequest) {
       return {
         ...sub,
         monthlyPrice: Number(sub.monthlyPrice),
-        planDetails: PLANS[sub.plan] || PLANS.FREE,
+        planDetails: getPlan(sub.plan),
         ownerName: isOwnOffice ? (sub.office?.users?.[0]?.name || '—') : '—',
         ownerEmail: isOwnOffice ? (sub.office?.users?.[0]?.email || sub.office?.email || '—') : '—',
         office: isOwnOffice ? sub.office : {

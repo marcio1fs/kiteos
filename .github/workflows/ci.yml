@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # No database needed: types, lint and the two suites that run against fakes.
+  quality:
+    name: Tipos, lint e testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Gerar Prisma Client
+        run: npx prisma generate
+
+      - name: Validar schema.prisma
+        run: npx prisma validate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Testes do produto
+        run: npx vitest run src/__tests__/ --reporter=verbose
+
+      - name: Testes de aceitação
+        run: npm run test:acceptance -- --reporter=verbose
+
+  # Real PostgreSQL: migrations must apply cleanly, must still match
+  # schema.prisma (drift gate) and the concurrency invariants must hold.
+  database:
+    name: Migrations e concorrência (PostgreSQL 17)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: kiteos
+          POSTGRES_PASSWORD: kiteos
+          POSTGRES_DB: kiteos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kiteos -d kiteos_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://kiteos:kiteos@localhost:5432/kiteos_test?schema=public
+      SHADOW_DATABASE_URL: postgresql://kiteos:kiteos@localhost:5432/kiteos_shadow?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Criar shadow database
+        run: psql "postgresql://kiteos:kiteos@localhost:5432/postgres" -c 'CREATE DATABASE kiteos_shadow'
+
+      - name: Aplicar migrations versionadas
+        run: npx prisma migrate deploy
+
+      # Fails the build if anyone edits schema.prisma without creating a
+      # migration: --exit-code returns non-zero on any difference.
+      - name: Gate de drift (migrations x schema.prisma)
+        run: >-
+          npx prisma migrate diff
+          --from-migrations prisma/migrations
+          --to-schema-datamodel prisma/schema.prisma
+          --shadow-database-url "$SHADOW_DATABASE_URL"
+          --exit-code
+
+      # Skips itself when DATABASE_URL is missing; here it runs for real.
+      - name: Testes de integração e concorrência
+        run: npm run test:integration -- --reporter=verbose
+
+  # NOTE: `next build` is intentionally not gated yet — it fails on Google Fonts
+  # fetching at build time and the `start` script depends on bun. Both are
+  # tracked as step 2 (build/empacotamento) of the audit report.

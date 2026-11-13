@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { paySale, cancelSale, updateOpenSale, updateSaleSchema } from '@/lib/sales';
+import { commercialErrorResponse, CommercialError } from '@/lib/commercial';
 
 // GET /api/sales/[id] - Get sale detail
 export async function GET(
@@ -16,7 +18,7 @@ export async function GET(
 
     const { id } = await params;
     const sale = await db.sale.findFirst({
-      where: { id, deleted: false },
+      where: { id, officeId: auth.payload.officeId, deleted: false },
       include: {
         client: {
           select: { id: true, name: true, phone: true, email: true, cpfCnpj: true },
@@ -49,7 +51,7 @@ export async function GET(
   }
 }
 
-// PUT /api/sales/[id] - Update sale (status transition, payment)
+// PUT /api/sales/[id] - Payment, cancellation or open-sale metadata update
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -59,197 +61,55 @@ export async function PUT(
     if (!auth.payload) {
       return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
     }
-
     const { id } = await params;
-    const body = await request.json();
-    const { status, paymentMethod, discount, obs } = body;
+    const input = updateSaleSchema.parse(await request.json());
+    const officeId = auth.payload.officeId;
 
-    const sale = await db.sale.findFirst({
-      where: { id, deleted: false },
-      include: { items: { where: { deleted: false } } },
-    });
-
-    if (!sale) {
-      return NextResponse.json(
-        { success: false, error: 'Venda não encontrada' },
-        { status: 404 }
-      );
+    if (input.status === 'PAGA') {
+      if (!input.paymentMethod) throw new CommercialError('Forma de pagamento é obrigatória', 400);
+      const sale = await paySale(id, officeId, input.paymentMethod, auth.payload.userId, input.discount);
+      return NextResponse.json({ success: true, data: sale });
     }
-
-    if (sale.officeId !== auth.payload.officeId) {
-      return NextResponse.json({ success: false, error: 'Acesso negado' }, { status: 403 });
+    if (input.status === 'CANCELADA') {
+      if (auth.payload.role === 'EMPLOYEE') throw new CommercialError('Apenas ADMIN/OWNER podem cancelar vendas', 403);
+      const sale = await cancelSale(id, officeId, auth.payload.userId);
+      return NextResponse.json({ success: true, data: sale });
     }
-
-    // Handle payment (mark as PAGA)
-    if (status === 'PAGA' && sale.status === 'ABERTA') {
-      if (!paymentMethod) {
-        return NextResponse.json(
-          { success: false, error: 'Forma de pagamento é obrigatória' },
-          { status: 400 }
-        );
-      }
-
-      const updatedSale = await db.$transaction(async (tx) => {
-        const updated = await tx.sale.update({
-          where: { id },
-          data: {
-            status: 'PAGA',
-            paymentMethod,
-            paidAt: new Date(),
-            discount: discount !== undefined ? discount : Number(sale.discount),
-            totalAmount: sale.items.reduce((sum, i) => sum + Number(i.totalPrice), 0) - (discount !== undefined ? discount : Number(sale.discount)),
-            obs: obs !== undefined ? obs : sale.obs,
-          },
-          include: {
-            client: true,
-            items: true,
-          },
-        });
-
-        // Create financial entry
-        await tx.financialEntry.create({
-          data: {
-            type: 'RECEBER',
-            category: 'PDV',
-            description: `Venda ${sale.number}`,
-            amount: Number(updated.totalAmount),
-            discount: 0,
-            interest: 0,
-            totalAmount: Number(updated.totalAmount),
-            status: 'PAGO',
-            dueDate: new Date(),
-            paymentDate: new Date(),
-            paymentMethod,
-            reference: sale.number,
-            saleId: sale.id,
-            officeId: sale.officeId,
-          },
-        });
-
-        return updated;
-      });
-
-      return NextResponse.json({ success: true, data: updatedSale });
-    }
-
-    // Handle cancellation
-    if (status === 'CANCELADA' && (sale.status === 'ABERTA' || sale.status === 'PAGA')) {
-      const updatedSale = await db.$transaction(async (tx) => {
-        // Return stock for part items
-        for (const item of sale.items) {
-          if (item.partId) {
-            const part = await tx.part.findFirst({
-              where: { id: item.partId, deleted: false },
-            });
-            if (part) {
-              // Create ENTRADA stock movement (return)
-              await tx.stockMovement.create({
-                data: {
-                  type: 'ENTRADA',
-                  quantity: Number(item.quantity),
-                  unitCost: Number(part.costPrice),
-                  reason: 'Cancelamento de venda PDV',
-                  reference: sale.number,
-                  partId: part.id,
-                  officeId: sale.officeId,
-                },
-              });
-
-              // Return stock
-              await tx.part.update({
-                where: { id: part.id },
-                data: { quantity: Number(part.quantity) + Number(item.quantity) },
-              });
-            }
-          }
-        }
-
-        // If was PAGA, cancel the financial entry
-        if (sale.status === 'PAGA') {
-          await tx.financialEntry.updateMany({
-            where: { saleId: sale.id, deleted: false },
-            data: { status: 'CANCELADO' },
-          });
-        }
-
-        const updated = await tx.sale.update({
-          where: { id },
-          data: { status: 'CANCELADA' },
-          include: {
-            client: true,
-            items: true,
-          },
-        });
-
-        return updated;
-      });
-
-      return NextResponse.json({ success: true, data: updatedSale });
-    }
-
-    // Simple update (discount, obs)
-    const updatedSale = await db.sale.update({
-      where: { id },
-      data: {
-        discount: discount !== undefined ? discount : Number(sale.discount),
-        obs: obs !== undefined ? obs : sale.obs,
-        totalAmount: sale.items.reduce((sum, i) => sum + Number(i.totalPrice), 0) - (discount !== undefined ? discount : Number(sale.discount)),
-      },
-      include: {
-        client: true,
-        items: true,
-      },
-    });
-
-    return NextResponse.json({ success: true, data: updatedSale });
+    if (input.paymentMethod !== undefined) throw new CommercialError('Forma de pagamento só pode ser definida ao pagar a venda', 400);
+    const sale = await updateOpenSale(id, officeId, { discount: input.discount, obs: input.obs });
+    return NextResponse.json({ success: true, data: sale });
   } catch (error) {
+    const known = commercialErrorResponse(error);
+    if (known) return NextResponse.json(known.body, { status: known.status });
     logger.error('Error updating sale:', { error: error instanceof Error ? error.message : String(error) });
-    return NextResponse.json(
-      { success: false, error: 'Erro ao atualizar venda' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Erro ao atualizar venda' }, { status: 500 });
   }
 }
 
-// DELETE /api/sales/[id] - Soft delete sale
+// DELETE /api/sales/[id] - Only cancelled, unpaid sales may be hidden.
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireAuth(request);
+    const auth = await requireAuth(request, undefined, 'ADMIN');
     if (!auth.payload) {
       return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
     }
-
     const { id } = await params;
-
-    const sale = await db.sale.findFirst({
-      where: { id, deleted: false },
-    });
-
-    if (!sale) {
-      return NextResponse.json(
-        { success: false, error: 'Venda não encontrada' },
-        { status: 404 }
-      );
-    }
-
-    if (sale.officeId !== auth.payload.officeId) {
-      return NextResponse.json({ success: false, error: 'Acesso negado' }, { status: 403 });
-    }
-
-    await db.sale.update({
-      where: { id },
+    const officeId = auth.payload.officeId;
+    const result = await db.sale.updateMany({
+      where: { id, officeId, deleted: false, status: 'CANCELADA' },
       data: { deleted: true },
     });
-
+    if (result.count !== 1) {
+      const exists = await db.sale.findFirst({ where: { id, officeId, deleted: false } });
+      if (!exists) return NextResponse.json({ success: false, error: 'Venda não encontrada' }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Somente vendas canceladas podem ser excluídas. Cancele a venda antes de excluí-la.' }, { status: 409 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     logger.error('Error deleting sale:', { error: error instanceof Error ? error.message : String(error) });
-    return NextResponse.json(
-      { success: false, error: 'Erro ao excluir venda' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Erro ao excluir venda' }, { status: 500 });
   }
 }

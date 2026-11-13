@@ -83,7 +83,7 @@ export default function Home() {
       case 'subscriptions':
         return <SubscriptionsModule />
       case 'admin-subscriptions':
-        return (user?.role === 'ADMIN' || user?.role === 'OWNER') ? <AdminSubscriptionsModule /> : <DashboardModule />
+        return user?.isPlatformAdmin === true ? <AdminSubscriptionsModule /> : <DashboardModule />
       case 'notifications':
         return <NotificationsModule />
       case 'ai-assistant':

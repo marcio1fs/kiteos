@@ -83,7 +83,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-1">
         {navItems
-          .filter((item) => item.id !== 'admin-subscriptions' || user?.role === 'ADMIN' || user?.role === 'OWNER')
+          .filter((item) => item.id !== 'admin-subscriptions' || user?.isPlatformAdmin === true)
           .map((item) => {
             const Icon = item.icon
             const isActive = currentPage === item.id
@@ -166,7 +166,7 @@ export function MobileNav() {
             </div>
             <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-1">
               {navItems
-                .filter((item) => item.id !== 'admin-subscriptions' || user?.role === 'ADMIN' || user?.role === 'OWNER')
+                .filter((item) => item.id !== 'admin-subscriptions' || user?.isPlatformAdmin === true)
                 .map((item) => {
                   const NavIcon = item.icon
                   const isActive = currentPage === item.id

@@ -4,22 +4,8 @@ import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import MercadoPagoConfig, { Preference } from 'mercadopago';
 import { randomBytes } from 'crypto';
-
-// Plan definitions (same as other subscription routes)
-const PLANS: Record<string, {
-  maxOS: number;
-  maxClients: number;
-  maxParts: number;
-  aiAccess: boolean;
-  whatsapp: boolean;
-  price: number;
-  label: string;
-}> = {
-  FREE: { maxOS: 10, maxClients: 20, maxParts: 50, aiAccess: false, whatsapp: false, price: 0, label: 'Free' },
-  PRO: { maxOS: 100, maxClients: 200, maxParts: 500, aiAccess: true, whatsapp: false, price: 99.90, label: 'Pro' },
-  PRO_PLUS: { maxOS: 500, maxClients: 1000, maxParts: 2000, aiAccess: true, whatsapp: true, price: 199.90, label: 'Pro+' },
-  PREMIUM: { maxOS: -1, maxClients: -1, maxParts: -1, aiAccess: true, whatsapp: true, price: 349.90, label: 'Premium' },
-};
+import { decryptToken } from '@/lib/token-encryption';
+import { PLANS, PLAN_KEYS, getPlan, isPlanKey } from '@/lib/plans';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
@@ -42,14 +28,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
     }
 
-    if (!plan || !PLANS[plan] || plan === 'FREE') {
+    if (!isPlanKey(plan) || plan === 'FREE') {
       return NextResponse.json(
         { success: false, error: 'Plano inválido. Selecione um plano pago.' },
         { status: 400 }
       );
     }
 
-    const planDetails = PLANS[plan];
+    const planDetails = getPlan(plan);
 
     // Get office info
     const office = await db.office.findUnique({
@@ -93,9 +79,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const officeToken = decryptToken(office.mpAccessToken);
     const accessToken = (mpAccessToken && !mpAccessToken.includes('xxxxxxxx'))
       ? mpAccessToken
-      : office.mpAccessToken!;
+      : officeToken;
+    if (!accessToken) {
+      return NextResponse.json({ success: false, error: 'Token do Mercado Pago não configurado ou inválido' }, { status: 400 });
+    }
 
     // Generate a unique reference for this subscription payment
     const paymentRef = `KITEOS-SUB-${officeId.slice(-8)}-${plan}-${Date.now()}`;

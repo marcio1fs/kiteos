@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import MercadoPagoConfig, { Payment, Preference } from 'mercadopago';
 import { decryptToken } from '@/lib/token-encryption';
 import { requireAuth } from '@/lib/auth';
+import { CommercialError, toCents, fromCents } from '@/lib/commercial';
 
 // POST /api/mercadopago/create-payment - Create a payment preference for a sale
 export async function POST(request: NextRequest) {
@@ -62,23 +63,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (sale.status !== 'ABERTA') {
+      return NextResponse.json({ success: false, error: 'Apenas vendas em aberto podem gerar cobrança' }, { status: 409 });
+    }
+    const totalCents = toCents(Number(sale.totalAmount));
+    if (totalCents <= 0) {
+      return NextResponse.json({ success: false, error: 'Venda com total zero não pode gerar cobrança' }, { status: 400 });
+    }
+    const externalReference = `SALE:${officeId}:${sale.id}`;
+
     // Configure Mercado Pago SDK with decrypted token
     const client = new MercadoPagoConfig({
       accessToken: decryptedAccessToken,
     });
 
-    // Build items for MP
-    const items = sale.items.map(item => ({
-      id: item.partId || item.id,
-      title: item.description,
-      unit_price: Number(item.unitPrice),
-      quantity: Number(item.quantity),
-      currency_id: 'BRL' as const,
-    }));
+    // Build items for MP. Allocate the sale discount proportionally so the
+    // preference total equals sale.totalAmount exactly (in cents).
+    const grossCents = sale.items.reduce((sum, item) => sum + Math.round(toCents(Number(item.unitPrice)) * Number(item.quantity)), 0);
+    let allocated = 0;
+    const items = sale.items.map((item, index) => {
+      const lineGross = Math.round(toCents(Number(item.unitPrice)) * Number(item.quantity));
+      const lineNet = index === sale.items.length - 1
+        ? totalCents - allocated
+        : Math.round(lineGross * totalCents / grossCents);
+      allocated += lineNet;
+      const quantity = Number(item.quantity);
+      return {
+        id: item.partId || item.id,
+        title: item.description,
+        unit_price: fromCents(Math.round(lineNet / quantity)),
+        quantity,
+        currency_id: 'BRL' as const,
+      };
+    });
+    // Rounding per-unit can drift for fractional quantities; use a single
+    // consolidated line when that happens so MP never charges a different total.
+    const preferenceTotal = items.reduce((sum, i) => sum + Math.round(toCents(i.unit_price) * i.quantity), 0);
+    const mpItems = preferenceTotal === totalCents ? items : [{
+      id: sale.id, title: `Venda ${sale.number}`, unit_price: fromCents(totalCents), quantity: 1, currency_id: 'BRL' as const,
+    }];
 
     // Create preference
     const preferenceBody = {
-      items,
+      items: mpItems,
       payer: sale.client ? {
         name: sale.client.name,
         email: sale.client.email || undefined,
@@ -107,12 +134,12 @@ export async function POST(request: NextRequest) {
         pending: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mercadopago/pending`,
       },
       notification_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mercadopago/webhook`,
-      external_reference: sale.number,
+      external_reference: externalReference,
       statement_descriptor: 'KITEOS',
     };
 
     const preference = new Preference(client);
-    const result = await preference.create({ body: preferenceBody });
+    const result = await preference.create({ body: preferenceBody, requestOptions: { idempotencyKey: `pref-${sale.id}-${totalCents}` } });
 
     // For PIX, generate QR code
     if (paymentMethod === 'PIX') {
@@ -134,8 +161,9 @@ export async function POST(request: NextRequest) {
             } : {
               email: office.email || '',
             },
-            external_reference: sale.number,
+            external_reference: externalReference,
           },
+          requestOptions: { idempotencyKey: `pix-${sale.id}-${totalCents}` },
         });
 
         const qrCodeBase64 = pixPayment.point_of_interaction?.transaction_data?.qr_code_base64 || null;

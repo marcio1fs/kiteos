@@ -2,21 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
-
-// Plan definitions
-const PLANS: Record<string, {
-  maxOS: number;
-  maxClients: number;
-  maxParts: number;
-  aiAccess: boolean;
-  whatsapp: boolean;
-  price: number;
-}> = {
-  FREE: { maxOS: 10, maxClients: 20, maxParts: 50, aiAccess: false, whatsapp: false, price: 0 },
-  PRO: { maxOS: 100, maxClients: 200, maxParts: 500, aiAccess: true, whatsapp: false, price: 99.90 },
-  PRO_PLUS: { maxOS: 500, maxClients: 1000, maxParts: 2000, aiAccess: true, whatsapp: true, price: 199.90 },
-  PREMIUM: { maxOS: -1, maxClients: -1, maxParts: -1, aiAccess: true, whatsapp: true, price: 349.90 },
-};
+import { PLANS, PLAN_KEYS, getPlan, isPlanKey } from '@/lib/plans';
 
 // GET /api/subscriptions - List subscriptions for office
 export async function GET(request: NextRequest) {
@@ -58,7 +44,7 @@ export async function GET(request: NextRequest) {
     // Add plan details to each subscription
     const enrichedSubscriptions = subscriptions.map((sub) => ({
       ...sub,
-      planDetails: PLANS[sub.plan] || PLANS.FREE,
+      planDetails: getPlan(sub.plan),
     }));
 
     return NextResponse.json({
@@ -109,9 +95,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!plan || !PLANS[plan]) {
+    if (!isPlanKey(plan)) {
       return NextResponse.json(
-        { success: false, error: `Plano inválido. Planos disponíveis: ${Object.keys(PLANS).join(', ')}` },
+        { success: false, error: `Plano inválido. Planos disponíveis: ${PLAN_KEYS.join(', ')}` },
         { status: 400 }
       );
     }
@@ -134,7 +120,7 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date();
-    const planDetails = PLANS[plan];
+    const planDetails = getPlan(plan);
     const startDateObj = startDate ? new Date(startDate) : now;
     const isTrial = !!trialEndDate;
 
