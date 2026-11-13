@@ -155,10 +155,32 @@ recebeu `.github`, `.zscripts`, `agent-ctx`, `audit`, `docker`, `download`, `exa
 `tsconfig.json` já exclui `examples`, `agent-ctx`, `skills` e `src/__tests__` do typecheck, e o
 `next build` não lê nada disso.
 
+**O ganho é de higiene, não de peso — medido:** tudo o que o `.dockerignore` passa a excluir soma
+**1,5 MB**. O que importa é o que deixa de embarcar: o relatório de auditoria e seus logs, os
+scripts internos de operação (`daemon.sh`, `kiteos-daemon.sh`, `server-watchdog.py`,
+`keep-alive.sh`…), `agent-ctx/`, `examples/` e os testes. Nenhum deles tem função em produção e
+todos descrevem o sistema para quem obtiver a imagem.
+
+O volume real está em outro lugar, e este passo não o resolve:
+
+| Componente | Tamanho |
+| --- | --- |
+| `.next/standalone/node_modules` (deps traçadas) | 61 MB |
+| `.next/standalone/src` (fonte traçada) | 2,6 MB |
+| `.next/standalone/public` | 3,5 MB |
+| `.next/static` (copiado à parte para a imagem) | **2,1 MB** |
+| **`/app` na imagem construída pelo CI** | **155,7 MB** |
+
+A diferença entre a soma local (~79 MB de standalone + 2,1 MB de static) e os 155,7 MB da imagem
+é o **binário do query engine do Prisma** (`libquery_engine-linux-musl-openssl-3.0.x.so.node`),
+que o `prisma generate` baixa dentro do build da imagem e que **este sandbox não consegue
+baixar** — o client gerado offline não carrega engine nenhum, então a medição local não o inclui.
+
 O efeito é afirmado pelo job `docker` do CI, que **inspeciona a imagem construída**
 (`test ! -e /app/audit`, `test ! -e /app/src/__tests__`) — não por medição local, já que não há
 docker neste sandbox. Esse job **passou** (run `43347685341`), então a imagem construída no CI
-não contém `audit/` nem `src/__tests__`. `src/` continua sendo traçado (2,6 MB) e `node_modules` traçado segue sendo
+não contém `audit/` nem `src/__tests__`, tem `server.js`, `.next/static`, `public` e `prisma`, e
+roda sobre `node v22.23.5`. `src/` continua sendo traçado (2,6 MB) e `node_modules` traçado segue sendo
 o grosso (~61 MB); eliminar isso exigiria trocar o build para webpack, onde
 `outputFileTracingExcludes` é honrado — fora do escopo e não testado.
 
@@ -199,6 +221,9 @@ casar apenas `from '…'` / `require('…')`, e verificado nos dois sentidos: um
 
 Evidências: `audit/evidence/ci-run-43347685341.log` (verde), `ci-run-43347367316.log` (a falha
 do guard), `ci-run-43344737713.log` (passo 1).
+
+O run seguinte (`43348061585`, commit `4668a0c`) repetiu os quatro jobs verdes e publicou como
+anotação do check a medição da imagem: `node v22.23.5 | /app 155.7M`.
 
 ---
 
