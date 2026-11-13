@@ -128,7 +128,9 @@ jobs:
       # that actually keeps the build offline-safe.
       - name: Nenhuma fonte pode depender de rede no build
         run: |
-          if grep -rn "next/font/google" src/; then
+          # Só import de verdade: texto em comentário não pode derrubar o gate
+          # (a primeira versão deste passo falhou exatamente assim).
+          if grep -rnE "from ['\"]next/font/google['\"]|require\(['\"]next/font/google['\"]\)" src/; then
             echo "::error::next/font/google voltou — o build volta a depender de rede"
             exit 1
           fi
