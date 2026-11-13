@@ -5,10 +5,10 @@ PostgreSQL e rodar testes de integração/concorrência"), conforme escolha do u
 Nenhum outro item do roadmap foi tocado.
 
 Estado: **implementado, executado neste sandbox contra um PostgreSQL 17.11 real e validado
-no GitHub Actions** (run [`43344029849`](https://github.com/marcio1fs/kiteos/actions/runs/43344029849),
-commit `048dfd7`, ambos os jobs verdes) — inclusive o check canônico do Prisma
-(`migrate deploy` + `migrate diff --exit-code`), que não roda neste sandbox. O que continua
-sem poder ser executado aqui está na seção 6.
+no GitHub Actions** (run [`43344737713`](https://github.com/marcio1fs/kiteos/actions/runs/43344737713),
+commit `bd0d3bd`, ambos os jobs verdes) — inclusive o check canônico do Prisma
+(`prisma validate`, `migrate deploy` e `migrate diff --exit-code`), que não roda neste sandbox.
+O que continua sem poder ser executado aqui está na seção 6.
 
 ---
 
@@ -223,8 +223,9 @@ Nada abaixo foi executado **aqui**. Itens 1 e 3 foram depois executados pelo Git
 
 ### 7.1 Validação no GitHub Actions (o que o sandbox não consegue executar)
 
-Run [`43344029849`](https://github.com/marcio1fs/kiteos/actions/runs/43344029849),
-commit `048dfd7`, branch `arena/262c9bf1-kiteos` — **conclusão: success**, os dois jobs.
+Run [`43344737713`](https://github.com/marcio1fs/kiteos/actions/runs/43344737713), commit `bd0d3bd`,
+branch `arena/262c9bf1-kiteos` — **conclusão: success**, os dois jobs, com todos os gates
+ligados (`prisma validate` inclusive).
 
 | Job | Steps | Resultado |
 | --- | --- | --- |
@@ -247,11 +248,18 @@ Query Engine (Node-API) : libquery-engine c2990dca591cba766e3b7ef5d9e8a84796e47a
 Node.js                 : v22.23.4 | TypeScript 5.9.3 | debian-openssl-3.0.x
 ```
 
-O primeiro run (`43343039111`) falhou no step `prisma validate` e pulou typecheck/lint/testes —
-corrigido como descrito na seção 5; o job de banco já passou de primeira nesse run.
+Histórico dos quatro runs, todos na mesma branch:
 
-Evidências brutas em `audit/evidence/`: `ci-run-43344029849.log` (run verde),
-`ci-run-43343039111.log` (run com a falha do `validate`), `migrations-verify-postgres.log`,
+| Run | Commit | Resultado | Observação |
+| --- | --- | --- | --- |
+| `43343039111` | `09023d5` | falha no job de qualidade | `prisma validate` falhou (download transitório do schema engine) e pulou typecheck/lint/testes. **O job de banco já passou de primeira**, com migrate deploy + drift gate + 13 testes de integração. |
+| `43344029849` | `048dfd7` | **success** | validate virou diagnóstico não-bloqueante; tudo o mais gateado. |
+| `43344437193` | `27c419a` | **success** | diagnóstico revelou `The schema at prisma/schema.prisma is valid 🚀`. |
+| `43344737713` | `bd0d3bd` | **success** | validate promovido de volta a gate, com um retry. |
+
+Evidências brutas em `audit/evidence/`: `ci-run-43344737713.log` (run verde final),
+`ci-run-43344029849.log`, `ci-run-43343039111.log` (run com a falha do `validate`),
+`migrations-verify-postgres.log`,
 `integration-postgres-real.log`, `acceptance-fase3-banco.log`, `product-tests-fase3-banco.log`,
 `typecheck-fase3-banco.log`, `lint-integration-fase3.log`, `lint-repo-fase3-banco.log`.
 
