@@ -171,6 +171,7 @@ jobs:
             test -d /app/prisma
             test ! -e /app/audit
             test ! -e /app/src/__tests__
-            node --version
-            du -sh /app
+            # Publicado como anotação do check: é o único canal legível para quem
+            # não consegue baixar o log bruto do job.
+            echo "::notice title=imagem::node $(node --version) | /app $(du -sh /app | cut -f1)"
           '

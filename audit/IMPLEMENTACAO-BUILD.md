@@ -157,7 +157,8 @@ recebeu `.github`, `.zscripts`, `agent-ctx`, `audit`, `docker`, `download`, `exa
 
 O efeito é afirmado pelo job `docker` do CI, que **inspeciona a imagem construída**
 (`test ! -e /app/audit`, `test ! -e /app/src/__tests__`) — não por medição local, já que não há
-docker neste sandbox. `src/` continua sendo traçado (2,6 MB) e `node_modules` traçado segue sendo
+docker neste sandbox. Esse job **passou** (run `43347685341`), então a imagem construída no CI
+não contém `audit/` nem `src/__tests__`. `src/` continua sendo traçado (2,6 MB) e `node_modules` traçado segue sendo
 o grosso (~61 MB); eliminar isso exigiria trocar o build para webpack, onde
 `outputFileTracingExcludes` é honrado — fora do escopo e não testado.
 
@@ -177,6 +178,27 @@ anotada para virar gate:
 
 O grep por `next/font/google` existe porque, num runner com rede, o código antigo **passaria**
 no build — o guard offline é o que impede a regressão de voltar despercebida.
+
+### 5.1 Execução real
+
+Run [`43347685341`](https://github.com/marcio1fs/kiteos/actions/runs/43347685341), commit
+`eb3f4f9` — **os quatro jobs verdes**:
+
+| Job | Resultado | Duração |
+| --- | --- | --- |
+| `Tipos, lint e testes` | success | 1m07s |
+| `Migrations e concorrência (PostgreSQL 17)` | success | 1m04s |
+| `Build de produção` | success | 1m11s |
+| `Imagem Docker` | success | 2m12s |
+
+No run anterior (`43347367316`) os três jobs pré-existentes e o novo job de imagem já passaram;
+o job `build` falhou **no próprio guard**, que usava `grep -rn "next/font/google" src/` e casou
+com o comentário de `layout.tsx` que explica por que a dependência foi removida. Corrigido para
+casar apenas `from '…'` / `require('…')`, e verificado nos dois sentidos: uma sonda com
+`import { Geist } from "next/font/google"` é pega, e a árvore real passa.
+
+Evidências: `audit/evidence/ci-run-43347685341.log` (verde), `ci-run-43347367316.log` (a falha
+do guard), `ci-run-43344737713.log` (passo 1).
 
 ---
 
