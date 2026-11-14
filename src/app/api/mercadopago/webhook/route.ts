@@ -3,7 +3,8 @@ import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { decryptToken } from '@/lib/token-encryption';
 import { validateMpSignature, fetchMpPayment, type MpPayment } from '@/lib/mercadopago-webhook';
-import { paySale, cancelSale } from '@/lib/sales';
+import { paySale, cancelSale, reverseSale } from '@/lib/sales';
+import { systemActor } from '@/lib/reversals';
 import { CommercialError, toCents } from '@/lib/commercial';
 import { z } from 'zod';
 
@@ -111,8 +112,30 @@ export async function POST(request: NextRequest) {
           if (!(error instanceof CommercialError)) throw error;
         }
       }
-      // Refunds/chargebacks require an explicit financial reversal workflow; do
-      // not silently flip a paid sale back to open.
+      // Refunds and chargebacks undo a settled sale through the explicit reversal
+      // flow: money back on the ledger, stock back on the shelf, sale ESTORNADA
+      // (PAY-06). reverseSale is idempotent and its status transition is the
+      // concurrency guard, so Mercado Pago retrying the event cannot refund twice.
+      if (payment.status === 'refunded' || payment.status === 'charged_back') {
+        if (sale.status === 'PAGA') {
+          try {
+            await reverseSale(sale.id, office.id, systemActor('mercadopago-webhook'), {
+              reason: `Estorno Mercado Pago: pagamento ${payment.id} com status ${payment.status}`,
+              paymentMethod: 'MERCADO_PAGO',
+            });
+            logger.info('[MP Webhook] Sale reversed', { saleId: sale.id, status: payment.status });
+          } catch (error) {
+            if (error instanceof CommercialError && error.status === 409) {
+              logger.info('[MP Webhook] Reversal already applied or sale changed', { saleId: sale.id });
+            } else throw error;
+          }
+        } else {
+          // Nothing was settled on our side, so there is nothing to put back.
+          logger.info('[MP Webhook] Refund ignored: sale is not settled', {
+            saleId: sale.id, saleStatus: sale.status, paymentStatus: payment.status,
+          });
+        }
+      }
       return NextResponse.json({ success: true });
     }
 

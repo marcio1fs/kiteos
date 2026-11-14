@@ -5,6 +5,10 @@ import {
   paymentMethodSchema, toCents, fromCents, nextOfficeSequence, type Tx,
 } from '@/lib/commercial';
 import type { Prisma } from '@prisma/client';
+import {
+  REVERSED_ENTRY_STATUS, assertCanReverse, claimForReversal, createReversalEntry,
+  findReversalOf, type ReversalActor,
+} from '@/lib/reversals';
 
 const saleItemSchema = z.object({
   partId: idSchema.nullish(),
@@ -33,6 +37,10 @@ export const updateSaleSchema = z.object({
 }).strict();
 
 type SaleWithItems = Prisma.SaleGetPayload<{ include: { items: true } }>;
+
+/** Paid sale whose money and stock were put back. Terminal for money purposes;
+ *  still cancellable (see cancelSale) and never deletable while not cancelled. */
+export const SALE_REVERSED_STATUS = 'ESTORNADA';
 
 export function formatDocumentNumber(sequence: number): string {
   const letterIndex = Math.floor((sequence - 1) / 999);
@@ -117,8 +125,11 @@ async function returnSaleStock(tx: Tx, sale: SaleWithItems) {
     },
   });
   if (!deducted) return;
+  // Any ENTRADA against this sale means the stock is already back, whether it came
+  // from a cancellation or from a reversal. Matching only the cancellation reason
+  // would let "estorno then cancel" return the same items twice.
   const alreadyReturned = await tx.stockMovement.findFirst({
-    where: { officeId: sale.officeId, type: 'ENTRADA', deleted: false, reference: `SALE:${sale.id}`, reason: { startsWith: 'Cancelamento' } },
+    where: { officeId: sale.officeId, type: 'ENTRADA', deleted: false, reference: `SALE:${sale.id}` },
   });
   if (alreadyReturned) return;
   for (const item of sale.items) {
@@ -258,10 +269,12 @@ export async function cancelSale(saleId: string, officeId: string, actorId: stri
     const sale = await tx.sale.findFirst({ where: { id: saleId, officeId, deleted: false }, include: { items: { where: { deleted: false } } } });
     if (!sale) throw new CommercialError('Venda não encontrada', 404);
     if (sale.status === 'CANCELADA') return sale;
-    if (sale.status === 'PAGA') throw new CommercialError('Venda paga não pode ser cancelada diretamente. Registre o estorno do pagamento antes do cancelamento.', 409);
+    if (sale.status === 'PAGA') throw new CommercialError('Venda paga não pode ser cancelada diretamente. Registre o estorno (POST /api/sales/{id}/estorno) antes do cancelamento.', 409);
 
+    // ESTORNADA is cancellable: the reversal already put the money and the stock
+    // back, and both helpers below are idempotent, so nothing is returned twice.
     const claimed = await tx.sale.updateMany({
-      where: { id: saleId, officeId, status: 'ABERTA', deleted: false },
+      where: { id: saleId, officeId, status: { in: ['ABERTA', SALE_REVERSED_STATUS] }, deleted: false },
       data: { status: 'CANCELADA' },
     });
     if (claimed.count !== 1) throw new CommercialError('Venda alterada por outra operação. Recarregue e tente novamente.', 409);
@@ -275,6 +288,105 @@ export async function cancelSale(saleId: string, officeId: string, actorId: stri
       data: { action: 'CANCEL', entity: 'Sale', entityId: sale.id, details: JSON.stringify({ number: sale.number }), userId: actorId, officeId },
     });
     return tx.sale.findFirst({ where: { id: saleId, officeId }, include: { items: true, client: true } });
+  });
+}
+
+/**
+ * Reverse a PAID sale: money back on the ledger, stock back on the shelf, sale
+ * marked ESTORNADA. Nothing is deleted and no settled amount is rewritten.
+ *
+ * The status transition is the concurrency guard — `updateMany` with
+ * `status: 'PAGA'` lets PostgreSQL elect exactly one winner, so two simultaneous
+ * reversals cannot both refund. Retries (Mercado Pago webhook, double click)
+ * find ESTORNADA and get the existing reversal back without creating a second
+ * one. This is the flow `cancelSale`, `DELETE /api/financial/[id]` and the refund
+ * webhook already told callers to use (BIZ-05, BIZ-07, PAY-06).
+ */
+export async function reverseSale(
+  saleId: string,
+  officeId: string,
+  actor: ReversalActor,
+  input: { reason: string; paymentMethod?: string | null },
+) {
+  assertCanReverse(actor);
+
+  return db.$transaction(async (tx) => {
+    const sale = await tx.sale.findFirst({
+      where: { id: saleId, officeId, deleted: false },
+      include: { items: { where: { deleted: false } } },
+    });
+    if (!sale) throw new CommercialError('Venda não encontrada', 404);
+
+    if (sale.status === SALE_REVERSED_STATUS) {
+      const paidEntry = await tx.financialEntry.findFirst({
+        where: { saleId, officeId, deleted: false, status: { in: ['PAGO', REVERSED_ENTRY_STATUS] } },
+        orderBy: { createdAt: 'asc' },
+      });
+      const reversal = paidEntry ? await findReversalOf(tx, officeId, paidEntry.id) : null;
+      return { sale, reversal, alreadyReversed: true };
+    }
+    if (sale.status === 'CANCELADA') throw new CommercialError('Venda cancelada não tem pagamento a estornar', 409);
+    if (sale.status !== 'PAGA') {
+      throw new CommercialError(`Somente venda paga pode ser estornada (status atual: ${sale.status})`, 409);
+    }
+
+    const claimed = await tx.sale.updateMany({
+      where: { id: saleId, officeId, status: 'PAGA', deleted: false },
+      data: { status: SALE_REVERSED_STATUS },
+    });
+    if (claimed.count !== 1) {
+      throw new CommercialError('Venda estornada por outra operação. Recarregue e tente novamente.', 409);
+    }
+
+    await returnSaleStock(tx, sale);
+
+    // The settled launch stays in the books as ESTORNADO; the compensating entry
+    // is what moves the money back. A legacy paid sale without a launch is still
+    // reversible — the stock and the status are the parts that matter there.
+    const paidEntry = await tx.financialEntry.findFirst({
+      where: { saleId, officeId, deleted: false, status: 'PAGO' },
+      orderBy: { createdAt: 'asc' },
+    });
+    let reversal: { id: string } | null = null;
+    if (paidEntry) {
+      if (!(await claimForReversal(tx, paidEntry.id, officeId))) {
+        throw new CommercialError('Lançamento da venda alterado por outra operação. Recarregue e tente novamente.', 409);
+      }
+      const claimedEntry = await tx.financialEntry.findFirst({ where: { id: paidEntry.id, officeId } });
+      if (!claimedEntry) throw new CommercialError('Lançamento da venda não encontrado', 404);
+      const result = await createReversalEntry(tx, claimedEntry, {
+        actorId: actor.userId,
+        reason: input.reason,
+        paymentMethod: input.paymentMethod,
+        description: `Estorno da venda ${sale.number}`,
+      });
+      reversal = result.entry;
+    }
+
+    await tx.auditLog.create({
+      data: {
+        action: 'REVERSAL',
+        entity: 'Sale',
+        entityId: sale.id,
+        details: JSON.stringify({
+          number: sale.number,
+          reason: input.reason,
+          totalAmount: Number(sale.totalAmount),
+          financialEntryId: paidEntry?.id ?? null,
+          reversalId: reversal?.id ?? null,
+          itemsReturned: sale.items.filter(i => i.partId && !i.deleted).length,
+        }),
+        userId: actor.userId,
+        officeId,
+      },
+    });
+
+    const updated = await tx.sale.findFirst({
+      where: { id: saleId, officeId },
+      include: { items: true, client: true, financialEntries: true },
+    });
+    if (!updated) throw new CommercialError('Venda não encontrada', 404);
+    return { sale: updated, reversal, alreadyReversed: false };
   });
 }
 

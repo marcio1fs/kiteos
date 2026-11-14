@@ -85,6 +85,11 @@ jobs:
 
       - run: npm ci
 
+      # reversal.test.ts drives the production flow through the real PrismaClient,
+      # so this job needs a generated client (the concurrency suite only needs pg).
+      - name: Gerar Prisma Client
+        run: npx prisma generate
+
       - name: Criar shadow database
         run: psql "postgresql://kiteos:kiteos@localhost:5432/postgres" -c 'CREATE DATABASE kiteos_shadow'
 

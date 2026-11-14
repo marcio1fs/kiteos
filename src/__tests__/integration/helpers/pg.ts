@@ -143,6 +143,59 @@ export async function seedRefreshToken(pool: pg.Pool, userId: string, officeId: 
 }
 
 /**
+ * A paid sale exactly as `createSale` + `paySale` leave it: the part already
+ * deducted, the SAIDA movement recorded against `SALE:<id>`, and the settled
+ * RECEBER launch. `partQuantity` is the balance AFTER the deduction, so a
+ * correct reversal restores `partQuantity + quantity`.
+ */
+export async function seedPaidSale(
+  pool: pg.Pool,
+  args: { officeId: string; userId: string; quantity: number; partQuantity: number; total: number; number?: string },
+) {
+  const partId = nextId('part');
+  const saleId = nextId('sale');
+  const itemId = nextId('item');
+  const movementId = nextId('mov');
+  const entryId = nextId('fin');
+  const number = args.number ?? nextId('V');
+  const unitPrice = args.total / args.quantity;
+
+  await pool.query(
+    `INSERT INTO parts (id, sku, description, quantity, "minQuantity", "costPrice", "salePrice",
+                        "officeId", deleted, version, "createdAt", "updatedAt")
+     VALUES ($1, $2, 'Peça de teste', $3, 0, 10, $4, $5, false, 0, now(), now())`,
+    [partId, nextId('SKU'), args.partQuantity, unitPrice, args.officeId],
+  );
+  await pool.query(
+    `INSERT INTO sales (id, number, status, discount, "totalAmount", "paymentMethod", "paidAt",
+                        "userId", "officeId", deleted, "createdAt", "updatedAt")
+     VALUES ($1, $2, 'PAGA', 0, $3, 'PIX', now(), $4, $5, false, now(), now())`,
+    [saleId, number, args.total, args.userId, args.officeId],
+  );
+  await pool.query(
+    `INSERT INTO sale_items (id, description, quantity, "unitPrice", "totalPrice", "partId",
+                             "saleId", "officeId", deleted, "createdAt", "updatedAt")
+     VALUES ($1, 'Peça de teste', $2, $3, $4, $5, $6, $7, false, now(), now())`,
+    [itemId, args.quantity, unitPrice, args.total, partId, saleId, args.officeId],
+  );
+  await pool.query(
+    `INSERT INTO stock_movements (id, type, quantity, "unitCost", reason, reference,
+                                  "partId", "officeId", deleted, "createdAt")
+     VALUES ($1, 'SAIDA', $2, 10, 'Venda PDV - reserva de estoque', $3, $4, $5, false, now())`,
+    [movementId, args.quantity, `SALE:${saleId}`, partId, args.officeId],
+  );
+  await pool.query(
+    `INSERT INTO financial_entries (id, type, category, description, amount, discount, interest,
+                                    "totalAmount", status, "dueDate", "paymentDate", "paymentMethod",
+                                    reference, "saleId", "officeId", deleted, "createdAt", "updatedAt")
+     VALUES ($1, 'RECEBER', 'PDV', $2, $3, 0, 0, $3, 'PAGO', now(), now(), 'PIX', $4, $5, $6, false, now(), now())`,
+    [entryId, `Venda ${number}`, args.total, number, saleId, args.officeId],
+  );
+
+  return { partId, saleId, itemId, movementId, entryId, number };
+}
+
+/**
  * PlanStore backed by real SQL on one connection, so it participates in that
  * connection's transaction — including the advisory lock taken by
  * `assertCanCreate`.
