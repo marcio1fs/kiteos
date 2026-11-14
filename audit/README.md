@@ -1,6 +1,6 @@
 # Auditoria KiteOS
 
-> **Atualização 2026-11-14:** cinco levas de correções implementadas.
+> **Atualização 2026-11-14:** seis levas de correções implementadas.
 > - `IMPLEMENTACAO-FASE-1.md` — sessão, multi-tenant, vendas/PDV, OS, estoque,
 >   financeiro, webhooks Mercado Pago, SSRF e mTLS.
 > - `IMPLEMENTACAO-FASE-2-PLANOS.md` — limites e permissões de plano aplicados no
@@ -14,19 +14,27 @@
 >   lançamento vira `ESTORNADO` com um compensatório do tipo oposto, a venda vira
 >   `ESTORNADA` com o estoque de volta, e refund/chargeback do Mercado Pago desfaz
 >   os efeitos. Inclui a correção da FK `audit_logs.userId` para atores de máquina.
+> - `IMPLEMENTACAO-FISCAL.md` — fim dos status fiscais fictícios (itens FISC-01,
+>   FISC-02, FISC-04, NOT-01 e parte de FISC-08) e layout do SPED conferido contra o
+>   Guia Prático (FISC-03). NFS-e nasce `RPS` e só vira `EMITIDA` com prova de
+>   autorização; nota de venda nasce `RASCUNHO`; a fila de importação só conclui com
+>   nota gravada; e-mail sem provedor não é `ENVIADA`.
+>   **Não inclui homologação externa**: não há provedor de NFS-e integrado nem
+>   validação do SPED no PVA — ver as seções 9 e 12 daquele documento.
 >
-> Testes de aceitação: `npm run test:acceptance` (**126 testes**, Prisma mockado).
+> Testes de aceitação: `npm run test:acceptance` (**158 testes**, Prisma mockado).
 > Integração: `npm run test:integration` (**20 testes**, PostgreSQL real; pulam sem
 > `DATABASE_URL` — e o CI trata pulo com banco configurado como falha).
 > Typecheck: `npm run typecheck` (**0 erros**).
 > Última execução completa: CI run
-> [`43536765399`](https://github.com/marcio1fs/kiteos/actions/runs/43536765399),
-> 4 jobs `success` (evidência em `evidence/ci-run-43536765399.log`).
+> [`43540255108`](https://github.com/marcio1fs/kiteos/actions/runs/43540255108),
+> 4 jobs `success` (evidência em `evidence/ci-run-43540255108.log`).
 
 - `RELATORIO-AUDITORIA.md`: relatório principal, achados, evidências, plano e critérios de produção.
 - `IMPLEMENTACAO-*.md`: o que já foi corrigido, como foi validado e o que continua aberto.
-- `STATUS-SONDAS.md`: quais sondas ainda se reproduzem (4 defeitos fiscais), quais foram
-  corrigidas (13) e qual ficou obsoleta (1).
+- `STATUS-SONDAS.md`: **17 sondas corrigidas** (falham = o defeito não se reproduz
+  mais) e **1 obsoleta** (a do webhook do Mercado Pago). Nenhuma sonda de defeito
+  real passa hoje.
 - `*.probe.test.ts`: sondas de caracterização escritas **antes** das correções.
   **Passar = reproduzir o defeito da época.** Depois das Fases 1 e 2 várias delas
   deixam de passar — isso é o comportamento esperado e significa que o defeito foi

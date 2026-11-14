@@ -1,16 +1,18 @@
-# Status das sondas após as Fases 1 e 2
+# Status das sondas após as Fases 1 e 2 e os passos 3 e 5
 
-Data: 2026-11-05 · Comando: `npx vitest run --config audit/vitest.config.ts`
-· Evidência: `evidence/probes-pos-fase1-2.log`
+Data: 2026-11-14 · Comando: `npx vitest run --config audit/vitest.config.ts`
+· Evidência: `evidence/probes-pos-passo5.log` (atual) e
+`evidence/probes-pos-fase1-2.log` (histórico)
 
 As sondas (`audit/*.probe.test.ts`) foram escritas **antes** de qualquer correção
 para caracterizar defeitos reais. A convenção é invertida de propósito:
 
 > **Sonda que passa = o defeito ainda se reproduz. Sonda que falha = o defeito foi corrigido.**
 
-Resultado atual: **13 falham / 5 passam** (de 18).
+Resultado atual: **17 falham / 1 passa** (de 18). Todas as sondas que caracterizavam
+defeitos reais deixaram de passar; a única que passa é a obsoleta (seção final).
 
-## Corrigidos (sonda falha — 13)
+## Corrigidos (sonda falha — 17)
 
 | # | Sonda | Corrigido em |
 |---|---|---|
@@ -27,17 +29,19 @@ Resultado atual: **13 falham / 5 passam** (de 18).
 | 11 | Refresh renova sessão sem revalidar usuário/office/papel | Fase 1 (`rotateRefreshToken`) |
 | 12 | WhatsApp permite URL interna arbitrária (SSRF) | Fase 1 (`src/lib/safe-url.ts`) |
 | 13 | Cliente mTLS desativa a validação do certificado | Fase 1 (`rejectUnauthorized: true`) |
+| 14 | Fila assíncrona declara importação COMPLETED sem consultar SEFAZ | **Passo 5** (`src/lib/sefaz/nfe-import.ts`; job só conclui com nota gravada) |
+| 15 | E-mail não integrado é persistido como ENVIADA | **Passo 5** (sem provedor fica `PENDENTE` + `notIntegrated`) |
+| 16 | NFS-e é persistida como EMITIDA sem transmissão ao município | **Passo 5** (criação gera `RPS`; `EMITIDA` só via `transmitNfse` com prova) |
+| 17 | SPED: H010 desloca unidade/quantidade/valor e 0200 usa campos incompatíveis | **Passo 5** (`0100`/`0200`/`H010` conforme o Guia Prático) |
 
-## Ainda em aberto (sonda passa — 4 defeitos reais)
+As sondas 3, 4 e 7 também passaram a falhar de novo depois do **passo 3** por outro
+motivo: o comportamento que elas caracterizavam foi substituído pelo estorno
+explícito (`audit/IMPLEMENTACAO-ESTORNOS.md`).
 
-Todos do módulo fiscal, que depende de homologação externa:
-
-| # | Sonda | Situação |
-|---|---|---|
-| 14 | Fila assíncrona declara importação COMPLETED sem consultar SEFAZ | Aberto — item 5 do plano |
-| 15 | E-mail não integrado é persistido como ENVIADA | Aberto — item 5 do plano |
-| 16 | NFS-e é persistida como EMITIDA sem transmissão ao município | Aberto — item 5 do plano |
-| 17 | SPED: H010 desloca unidade/quantidade/valor e 0200 usa campos incompatíveis | Aberto — item 5 do plano |
+> **Atenção ao ler a sonda 16/17 como "fiscal pronto":** elas falham porque o
+> status fictício e o layout errado deixaram de existir — **não** porque o sistema
+> emite documentos. Não há provedor de NFS-e integrado nem validação no PVA; ver
+> `IMPLEMENTACAO-FISCAL.md`, seções 9 e 12.
 
 ## Sonda obsoleta (passa, mas não caracteriza mais o defeito — 1)
 
@@ -50,7 +54,12 @@ Esta sonda não deve ser lida como "webhook ainda quebra assinatura oficial".
 ## Como ler daqui em diante
 
 - Para saber se um comportamento seguro está garantido, use
-  `npm run test:acceptance` (94 testes) — estes **exigem** o comportamento correto.
-- As sondas servem como registro histórico do estado anterior à correção. Ao
-  concluir o item 5 (fiscal), as sondas 14–17 devem falhar e ser substituídas por
-  testes de aceitação equivalentes.
+  `npm run test:acceptance` (**158 testes**) — estes **exigem** o comportamento
+  correto.
+- As sondas servem como registro histórico do estado anterior à correção. As sondas
+  14–17 já falham e foram substituídas por testes de aceitação equivalentes:
+  `src/__tests__/acceptance/fiscal-honesty.test.ts` (24) e
+  `src/__tests__/acceptance/sped-layout.test.ts` (8).
+- As sondas continuam no repositório de propósito: se alguém reintroduzir um status
+  fiscal fictício ou o layout antigo do SPED, a sonda correspondente volta a passar
+  e o sinal fica visível.
