@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
-import { requireAuth, auditLog } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
+import { cancelNfse } from '@/lib/fiscal/nfse-transmission';
+import { fiscalErrorResponse } from '@/lib/fiscal/document-status';
 
 // GET /api/nfse/[id] - Get NFS-e details
 export async function GET(
@@ -50,7 +52,12 @@ export async function GET(
   }
 }
 
-// DELETE /api/nfse/[id] - Cancel NFS-e (sets status=CANCELADA)
+// DELETE /api/nfse/[id] - descartar RPS ou cancelar NFS-e autorizada.
+//
+// FISC-01: antes isto gravava CANCELADA em qualquer status, inclusive numa NFS-e
+// que nunca foi transmitida (nada a cancelar no município) e — pior — numa
+// "EMITIDA" fictícia. Agora: RPS é descartado localmente (nunca houve autorização)
+// e documento autorizado só cancela com prova de cancelamento do município.
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -59,7 +66,7 @@ export async function DELETE(
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const officeId = searchParams.get('officeId');
-    const motivoCancelamento = searchParams.get('motivoCancelamento') || 'Cancelamento sem motivo informado';
+    const motivoCancelamento = searchParams.get('motivoCancelamento') ?? '';
 
     if (!officeId) {
       return NextResponse.json(
@@ -73,47 +80,23 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
     }
 
-    const nfse = await db.nfseServico.findUnique({
-      where: { id },
+    const result = await cancelNfse(
+      id,
+      { userId: auth.payload.userId, officeId },
+      motivoCancelamento,
+    );
+
+    return NextResponse.json({
+      success: true,
+      alreadyCancelled: result.alreadyCancelled,
+      data: result.nfse,
     });
-
-    if (!nfse || nfse.officeId !== officeId || nfse.deleted) {
-      return NextResponse.json(
-        { success: false, error: 'NFS-e não encontrada' },
-        { status: 404 }
-      );
-    }
-
-    if (nfse.status === 'CANCELADA') {
-      return NextResponse.json(
-        { success: false, error: 'NFS-e já está cancelada' },
-        { status: 400 }
-      );
-    }
-
-    const updated = await db.nfseServico.update({
-      where: { id },
-      data: {
-        status: 'CANCELADA',
-        motivoCancelamento,
-      },
-      include: {
-        client: { select: { id: true, name: true, cpfCnpj: true } },
-      },
-    });
-
-    // Audit log
-    await auditLog({
-      action: 'CANCEL',
-      entity: 'NfseServico',
-      entityId: id,
-      details: JSON.stringify({ numero: nfse.numero, motivoCancelamento }),
-      userId: auth.payload.userId,
-      officeId,
-    });
-
-    return NextResponse.json({ success: true, data: updated });
   } catch (error) {
+    const known = fiscalErrorResponse(error);
+    if (known) return NextResponse.json(known.body, { status: known.status });
+    if (error instanceof Error && error.message === 'NFS-e não encontrada') {
+      return NextResponse.json({ success: false, error: error.message }, { status: 404 });
+    }
     logger.error('Error canceling NFS-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao cancelar NFS-e' },

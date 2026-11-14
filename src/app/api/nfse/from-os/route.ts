@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth, auditLog } from '@/lib/auth';
-import { calculateIssqn, validateNfseData, generateNfseXml, getCurrentCompetencia, ALIQ_ISSQN_PADRAO, SERVICOS_OFICINA } from '@/lib/nfse';
+import { calculateIssqn, validateNfseData, generateNfseXml, getCurrentCompetencia, SERVICOS_OFICINA } from '@/lib/nfse';
+import { NFSE_CANCELLED_STATUS, NFSE_RPS_STATUS, fiscalErrorResponse } from '@/lib/fiscal/document-status';
 
 // POST /api/nfse/from-os - Generate NFS-e from Service Order
 export async function POST(request: NextRequest) {
@@ -30,12 +31,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if NFS-e already exists for this OS
+    // Qualquer documento vivo desta OS bloqueia novo RPS: com a criação passando
+    // a gerar RPS, filtrar só por EMITIDA permitiria empilhar rascunhos da mesma OS.
     const existingNfse = await db.nfseServico.findFirst({
-      where: { serviceOrderId, officeId, deleted: false, status: 'EMITIDA' },
+      where: { serviceOrderId, officeId, deleted: false, status: { not: NFSE_CANCELLED_STATUS } },
     });
     if (existingNfse) {
       return NextResponse.json(
-        { success: false, error: 'Já existe uma NFS-e emitida para esta ordem de serviço' },
+        {
+          success: false,
+          error: existingNfse.status === NFSE_RPS_STATUS
+            ? `Já existe um RPS (${existingNfse.numero}) para esta ordem de serviço. Transmita-o ou cancele-o antes de gerar outro.`
+            : 'Já existe uma NFS-e emitida para esta ordem de serviço',
+          existingId: existingNfse.id,
+          existingStatus: existingNfse.status,
+        },
         { status: 400 }
       );
     }
@@ -128,7 +138,11 @@ export async function POST(request: NextRequest) {
       discriminacao,
       valorServicos: valorServicosFinal,
       valorDeducoes: 0,
-      aliqIssqn: Number(aliqIssqn) || ALIQ_ISSQN_PADRAO,
+      // FISC-08: alíquota de ISS é municipal; sem valor informado não há default
+      // seguro. NaN é recusado por validateNfseData com mensagem clara.
+      aliqIssqn: aliqIssqn === undefined || aliqIssqn === null || aliqIssqn === ''
+        ? Number.NaN
+        : Number(aliqIssqn),
       tipoTributacao: 'ISSQN' as const,
       clienteCpfCnpj: os.client.cpfCnpj || undefined,
       clienteNome: os.client.name,
@@ -159,12 +173,7 @@ export async function POST(request: NextRequest) {
     const lastNum = lastNfse ? parseInt(lastNfse.numero, 10) || 0 : 0;
     const numero = String(lastNum + 1).padStart(6, '0');
 
-    // Generate verification code
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let codigoVerificacao = '';
-    for (let i = 0; i < 8; i++) {
-      codigoVerificacao += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    // FISC-08: código de verificação é emitido pelo município na autorização.
 
     // Get office data
     const office = await db.office.findUnique({
@@ -203,7 +212,7 @@ export async function POST(request: NextRequest) {
     const nfse = await db.nfseServico.create({
       data: {
         numero,
-        codigoVerificacao,
+        codigoVerificacao: null,
         competencia: nfseData.competencia,
         tipoTributacao: nfseData.tipoTributacao,
         itemListaServico: nfseData.itemListaServico,
@@ -224,7 +233,8 @@ export async function POST(request: NextRequest) {
         clienteEndereco: nfseData.clienteEndereco || null,
         clienteEmail: nfseData.clienteEmail || null,
         xmlContent,
-        status: 'EMITIDA',
+        // FISC-01: RPS até a transmissão autorizada (ver transmitNfse).
+        status: NFSE_RPS_STATUS,
         officeId,
         clientId: nfseData.clientId || null,
         serviceOrderId: os.id,
@@ -248,8 +258,15 @@ export async function POST(request: NextRequest) {
       officeId,
     });
 
-    return NextResponse.json({ success: true, data: nfse }, { status: 201 });
+    return NextResponse.json({
+      success: true,
+      transmitted: false,
+      data: nfse,
+      warning: `RPS ${numero} criado a partir da OS ${os.number}. Não é documento fiscal: transmita em POST /api/nfse/${nfse.id}/transmitir.`,
+    }, { status: 201 });
   } catch (error) {
+    const known = fiscalErrorResponse(error);
+    if (known) return NextResponse.json(known.body, { status: known.status });
     logger.error('Error generating NFS-e from OS:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao gerar NFS-e a partir da OS' },

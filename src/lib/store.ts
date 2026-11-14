@@ -9,6 +9,7 @@ interface User {
   name: string
   role: string
   officeId: string
+  isPlatformAdmin?: boolean
 }
 
 interface Office {
@@ -316,6 +317,11 @@ export async function apiFetch(path: string, options?: RequestInit) {
       localStorage.removeItem('kiteos_user')
       localStorage.removeItem('kiteos_office')
       useAuthStore.setState({ user: null, office: null, token: null, isAuthenticated: false })
+    }
+    // `status` is additive: callers may branch on it (402 = plano/limite),
+    // while existing code keeps reading `success`/`error`.
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      return { ...data, status: res.status }
     }
     return data
   } catch (error) {

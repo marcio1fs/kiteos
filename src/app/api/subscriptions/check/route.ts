@@ -1,23 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomBytes } from 'crypto';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
+import { Prisma } from '@prisma/client';
+import { buildPlanStatus, resolveEffectivePlan } from '@/lib/plans';
 
-// Plan definitions
-const PLANS: Record<string, {
-  maxOS: number;
-  maxClients: number;
-  maxParts: number;
-  aiAccess: boolean;
-  whatsapp: boolean;
-  price: number;
-}> = {
-  FREE: { maxOS: 10, maxClients: 20, maxParts: 50, aiAccess: false, whatsapp: false, price: 0 },
-  PRO: { maxOS: 100, maxClients: 200, maxParts: 500, aiAccess: true, whatsapp: false, price: 99.90 },
-  PRO_PLUS: { maxOS: 500, maxClients: 1000, maxParts: 2000, aiAccess: true, whatsapp: true, price: 199.90 },
-  PREMIUM: { maxOS: -1, maxClients: -1, maxParts: -1, aiAccess: true, whatsapp: true, price: 349.90 },
-};
-
-// GET /api/subscriptions/check - Check if office has active subscription
+/**
+ * GET /api/subscriptions/check
+ *
+ * Reports the plan whose limits are actually enforced by the API. The policy
+ * lives in `@/lib/plans` so this endpoint and the creation guards can never
+ * disagree about what an office is allowed to do.
+ *
+ * This handler still performs billing housekeeping (auto-provision FREE, flag
+ * overdue periods, downgrade expired trials) because there is no background job
+ * doing it. Those writes happen before the limits are computed so the response
+ * reflects the post-housekeeping state.
+ */
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request);
@@ -29,38 +29,25 @@ export async function GET(request: NextRequest) {
     const officeId = searchParams.get('officeId');
 
     if (!officeId) {
-      return NextResponse.json(
-        { success: false, error: 'officeId é obrigatório' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'officeId é obrigatório' }, { status: 400 });
     }
 
     if (officeId !== auth.payload.officeId) {
       return NextResponse.json({ success: false, error: 'Acesso negado' }, { status: 403 });
     }
 
-    // Find active, trial, pending, or overdue subscription
-    const subscription = await db.subscription.findFirst({
-      where: {
-        officeId,
-        deleted: false,
-        status: { in: ['ATIVA', 'TRIAL', 'INADIMPLENTE', 'PENDENTE'] },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    const office = await db.office.findFirst({ where: { id: officeId, deleted: false }, select: { id: true } });
+    if (!office) {
+      return NextResponse.json({ success: false, error: 'Oficina não encontrada' }, { status: 404 });
+    }
 
-    // If no subscription, return free plan as default
-    if (!subscription) {
-      // Auto-create FREE subscription for the office
-      const now = new Date();
+    const now = new Date();
+    let current = await resolveEffectivePlan(db, officeId, now);
 
-      // Generate subscription code
-      const { randomBytes } = await import('crypto');
+    // Auto-provision a FREE subscription so every office has a billing record.
+    if (!current.subscriptionId) {
       const subscriptionCode = `KIT-${randomBytes(4).toString('hex').toUpperCase()}`;
-
-      const freeSubscription = await db.subscription.create({
+      await db.subscription.create({
         data: {
           officeId,
           plan: 'FREE',
@@ -72,164 +59,66 @@ export async function GET(request: NextRequest) {
           currentPeriodEnd: new Date(now.getFullYear(), now.getMonth() + 1, 1),
         },
       });
-
-      // Get current usage for limit checks
-      const [currentOS, currentClients, currentParts] = await Promise.all([
-        db.serviceOrder.count({
-          where: { officeId, deleted: false, createdAt: { gte: now } },
-        }),
-        db.client.count({
-          where: { officeId, deleted: false },
-        }),
-        db.part.count({
-          where: { officeId, deleted: false },
-        }),
-      ]);
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          hasSubscription: true,
-          subscription: freeSubscription,
-          planDetails: PLANS.FREE,
-          features: {
-            maxOS: PLANS.FREE.maxOS,
-            maxClients: PLANS.FREE.maxClients,
-            maxParts: PLANS.FREE.maxParts,
-            aiAccess: PLANS.FREE.aiAccess,
-            whatsapp: PLANS.FREE.whatsapp,
-          },
-          billingStatus: freeSubscription.status,
-          isOverdue: false,
-          currentUsage: {
-            os: currentOS,
-            clients: currentClients,
-            parts: currentParts,
-          },
-          limitsReached: {
-            os: PLANS.FREE.maxOS !== -1 && currentOS >= PLANS.FREE.maxOS,
-            clients: PLANS.FREE.maxClients !== -1 && currentClients >= PLANS.FREE.maxClients,
-            parts: PLANS.FREE.maxParts !== -1 && currentParts >= PLANS.FREE.maxParts,
-          },
-        },
-      });
+      current = await resolveEffectivePlan(db, officeId, now);
     }
 
-    // Check if overdue (currentPeriodEnd < today)
-    const now = new Date();
-    let isOverdue = false;
+    const subscription = await db.subscription.findFirst({
+      where: { id: current.subscriptionId ?? undefined, officeId, deleted: false },
+    });
 
-    if (
-      subscription.currentPeriodEnd &&
-      subscription.currentPeriodEnd < now &&
-      subscription.status === 'ATIVA'
-    ) {
-      isOverdue = true;
-      // Mark as INADIMPLENTE
-      await db.subscription.update({
-        where: { id: subscription.id },
-        data: { status: 'INADIMPLENTE' },
-      });
-      subscription.status = 'INADIMPLENTE';
+    if (subscription) {
+      // Period elapsed without a confirmed payment → flag as overdue. The plan
+      // limits are kept (grace) so the office can keep billing while it settles.
+      if (
+        subscription.status === 'ATIVA' &&
+        subscription.currentPeriodEnd &&
+        subscription.currentPeriodEnd < now
+      ) {
+        await db.subscription.update({
+          where: { id: subscription.id },
+          data: { status: 'INADIMPLENTE' },
+        });
+        subscription.status = 'INADIMPLENTE';
+      }
+
+      // Expired trial falls back to FREE for real, not only for this response.
+      if (subscription.status === 'TRIAL' && subscription.trialEndDate && subscription.trialEndDate < now) {
+        await db.subscription.update({
+          where: { id: subscription.id },
+          data: { status: 'ATIVA', plan: 'FREE', monthlyPrice: 0 },
+        });
+        subscription.status = 'ATIVA';
+        subscription.plan = 'FREE';
+        subscription.monthlyPrice = new Prisma.Decimal(0);
+      }
     }
 
-    // Check if trial has expired
-    if (
-      subscription.status === 'TRIAL' &&
-      subscription.trialEndDate &&
-      subscription.trialEndDate < now
-    ) {
-      // Downgrade to FREE when trial expires
-      await db.subscription.update({
-        where: { id: subscription.id },
-        data: {
-          status: 'ATIVA',
-          plan: 'FREE',
-          monthlyPrice: 0,
-        },
-      });
-      subscription.plan = 'FREE';
-      subscription.monthlyPrice = new (await import('@prisma/client/runtime/library')).Decimal(0);
-      subscription.status = 'ATIVA';
-    }
-
-    // For PENDENTE status - subscription is awaiting MP payment confirmation
-    // The plan is NOT active yet - use FREE plan limits until payment is confirmed
-    let effectivePlan = subscription.plan;
-    let effectivePlanDetails = PLANS[subscription.plan] || PLANS.FREE;
-    let isPendingPayment = false;
-
-    if (subscription.status === 'PENDENTE') {
-      // While payment is pending, the office only has FREE plan access
-      effectivePlan = 'FREE';
-      effectivePlanDetails = PLANS.FREE;
-      isPendingPayment = true;
-    }
-
-    const planDetails = effectivePlanDetails;
-
-    // Get current usage for limit checks
-    const periodStart = subscription.currentPeriodStart || subscription.startDate;
-    const [currentOS, currentClients, currentParts] = await Promise.all([
-      db.serviceOrder.count({
-        where: {
-          officeId,
-          deleted: false,
-          ...(periodStart && {
-            createdAt: {
-              gte: periodStart,
-            },
-          }),
-        },
-      }),
-      db.client.count({
-        where: {
-          officeId,
-          deleted: false,
-        },
-      }),
-      db.part.count({
-        where: {
-          officeId,
-          deleted: false,
-        },
-      }),
-    ]);
+    // Re-resolve after housekeeping so the reported limits match enforcement.
+    // buildPlanStatus resolves the effective plan and counts usage in one pass.
+    const status = await buildPlanStatus(db, officeId, now);
+    const effective = status.effective;
 
     return NextResponse.json({
       success: true,
       data: {
         hasSubscription: true,
-        subscription,
-        planDetails,
-        features: {
-          maxOS: planDetails.maxOS,
-          maxClients: planDetails.maxClients,
-          maxParts: planDetails.maxParts,
-          aiAccess: planDetails.aiAccess,
-          whatsapp: planDetails.whatsapp,
-        },
-        billingStatus: subscription.status,
-        isOverdue,
-        isPendingPayment,
-        pendingPlan: isPendingPayment ? subscription.plan : null,
-        currentUsage: {
-          os: currentOS,
-          clients: currentClients,
-          parts: currentParts,
-        },
-        limitsReached: {
-          os: planDetails.maxOS !== -1 && currentOS >= planDetails.maxOS,
-          clients: planDetails.maxClients !== -1 && currentClients >= planDetails.maxClients,
-          parts: planDetails.maxParts !== -1 && currentParts >= planDetails.maxParts,
-        },
+        subscription: subscription ?? null,
+        planDetails: status.planDetails,
+        features: status.features,
+        billingStatus: effective.status,
+        isOverdue: effective.isOverdue,
+        isPendingPayment: effective.isPendingPayment,
+        pendingPlan: effective.isPendingPayment ? effective.subscribedPlan : null,
+        /** Limits in force may be lower than the subscribed plan; say why. */
+        subscribedPlan: effective.subscribedPlan,
+        effectivePlan: effective.plan.key,
+        fallbackReason: effective.reason,
+        currentUsage: status.currentUsage,
+        limitsReached: status.limitsReached,
       },
     });
   } catch (error) {
-    console.error('Error checking subscription:', error);
-    return NextResponse.json(
-      { success: false, error: 'Erro ao verificar assinatura' },
-      { status: 500 }
-    );
+    logger.error('Error checking subscription:', { error: error instanceof Error ? error.message : String(error) });
+    return NextResponse.json({ success: false, error: 'Erro ao verificar assinatura' }, { status: 500 });
   }
 }

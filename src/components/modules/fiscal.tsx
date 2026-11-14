@@ -177,10 +177,16 @@ const OBRIGACAO_STATUS_CONFIG: Record<string, { label: string; className: string
 }
 
 const NFS_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  // RPS é o que a criação produz hoje: ainda não foi transmitido ao município,
+  // portanto não é documento fiscal. Mostrar isso é parte da correção (FISC-01).
+  RPS: { label: 'RPS · não transmitida', className: 'bg-amber-100 text-amber-800' },
   EMITIDA: { label: 'Emitida', className: 'bg-emerald-100 text-emerald-800' },
   CANCELADA: { label: 'Cancelada', className: 'bg-red-100 text-red-800' },
   SUBSTITUIDA: { label: 'Substituída', className: 'bg-sky-100 text-sky-800' },
 }
+
+/** Status desconhecido não pode ser exibido como "Emitida": mostra o valor cru. */
+const NFS_STATUS_FALLBACK = { label: '', className: 'bg-zinc-100 text-zinc-700' }
 
 // =============================================
 // MAIN COMPONENT
@@ -303,19 +309,57 @@ export function FiscalModule() {
   }
 
   // Cancel NFS-e
-  const handleCancelNfse = async (nfseId: string) => {
+  /**
+   * FISC-01: transmitir o RPS ao município. Sem integração configurada a API
+   * responde 501 e o documento continua RPS — a mensagem é mostrada ao operador
+   * em vez de o sistema fingir que emitiu.
+   */
+  const handleTransmitNfse = async (nfseId: string) => {
     if (!officeId) return
+    if (!window.confirm('Transmitir este RPS ao município? Ele só vira NFS-e emitida se o órgão autorizar.')) return
     try {
-      const res = await apiFetch(`/api/nfse/${nfseId}?officeId=${officeId}&motivoCancelamento=Cancelamento+solicitado+pelo+usuario`, {
-        method: 'DELETE',
+      const res = await apiFetch(`/api/nfse/${nfseId}/transmitir`, {
+        method: 'POST',
+        body: JSON.stringify({}),
       })
       if (res.success) {
         setNfseDetailOpen(false)
         fetchNfseList()
         fetchDashboard()
+      } else {
+        window.alert(res.error || 'Não foi possível transmitir a NFS-e.')
+      }
+    } catch (error) {
+      console.error('Error transmitting NFS-e:', error)
+      window.alert('Não foi possível transmitir a NFS-e.')
+    }
+  }
+
+  const handleCancelNfse = async (nfseId: string) => {
+    if (!officeId) return
+    // O motivo vai para a trilha de auditoria: um cancelamento "sem motivo
+    // informado" fabricado pelo front não serve para nada.
+    const motivo = window.prompt('Motivo do cancelamento (mínimo 3 caracteres):')
+    if (motivo === null) return
+    if (motivo.trim().length < 3) {
+      window.alert('Informe um motivo válido.')
+      return
+    }
+    try {
+      const res = await apiFetch(
+        `/api/nfse/${nfseId}?officeId=${officeId}&motivoCancelamento=${encodeURIComponent(motivo.trim())}`,
+        { method: 'DELETE' },
+      )
+      if (res.success) {
+        setNfseDetailOpen(false)
+        fetchNfseList()
+        fetchDashboard()
+      } else {
+        window.alert(res.error || 'Não foi possível cancelar a NFS-e.')
       }
     } catch (error) {
       console.error('Error canceling NFS-e:', error)
+      window.alert('Não foi possível cancelar a NFS-e.')
     }
   }
 
@@ -848,7 +892,8 @@ export function FiscalModule() {
                       </TableHeader>
                       <TableBody>
                         {nfseList.map((nfse) => {
-                          const statusConf = NFS_STATUS_CONFIG[nfse.status] || NFS_STATUS_CONFIG.EMITIDA
+                          const statusConf = NFS_STATUS_CONFIG[nfse.status]
+                            || { ...NFS_STATUS_FALLBACK, label: String(nfse.status) }
                           return (
                             <TableRow key={nfse.id}>
                               <TableCell className="font-mono font-medium text-sm">{nfse.numero}</TableCell>
@@ -1016,15 +1061,30 @@ export function FiscalModule() {
                 </>
               )}
 
-              {String(nfseDetail.status) === 'EMITIDA' && (
-                <DialogFooter>
+              {(String(nfseDetail.status) === 'EMITIDA' || String(nfseDetail.status) === 'RPS') && (
+                <DialogFooter className="gap-2">
+                  {String(nfseDetail.status) === 'RPS' && (
+                    <>
+                      <p className="text-xs text-amber-700 mr-auto self-center">
+                        RPS ainda não transmitido: não é documento fiscal.
+                      </p>
+                      <Button
+                        size="sm"
+                        onClick={() => handleTransmitNfse(String(nfseDetail.id))}
+                        className="gap-2"
+                      >
+                        <Send className="w-4 h-4" /> Transmitir
+                      </Button>
+                    </>
+                  )}
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => handleCancelNfse(String(nfseDetail.id))}
                     className="gap-2"
                   >
-                    <Ban className="w-4 h-4" /> Cancelar NFS-e
+                    <Ban className="w-4 h-4" />
+                    {String(nfseDetail.status) === 'RPS' ? 'Descartar RPS' : 'Cancelar NFS-e'}
                   </Button>
                 </DialogFooter>
               )}

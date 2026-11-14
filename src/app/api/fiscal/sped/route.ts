@@ -9,7 +9,7 @@ import { generateSpedFiscal, type SpedGeneratorConfig } from '@/lib/sped'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { officeId, competencia, versao } = body
+    const { officeId, competencia, versao, contabilista } = body
 
     if (!officeId) {
       return NextResponse.json(
@@ -73,22 +73,30 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate SPED Fiscal
+    // FISC-03: os dados do contabilista (registro 0100) são entrada obrigatória.
+    // Sem eles o gerador recusa em vez de inventar nome e CRC.
     const config: SpedGeneratorConfig = {
       officeId,
       competencia,
       versao: versao || '019',
+      contabilista: contabilista ?? null,
     }
 
     const result = await generateSpedFiscal(config)
 
     if (!result.success) {
+      // 400 quando o que falta é entrada do chamador (contabilista, competência),
+      // 500 só para falha inesperada da geração.
+      const isInputError = (result.errors ?? []).some(e => e.startsWith('Registro 0100'))
       return NextResponse.json(
         {
           success: false,
-          error: 'Erro ao gerar arquivo SPED Fiscal',
+          error: isInputError
+            ? 'Dados do contabilista ausentes ou inválidos — o SPED não é gerado com o registro 0100 fictício'
+            : 'Erro ao gerar arquivo SPED Fiscal',
           details: result.errors?.join('; '),
         },
-        { status: 500 }
+        { status: isInputError ? 400 : 500 }
       )
     }
 

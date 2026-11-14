@@ -1,58 +1,80 @@
 /**
  * Token Encryption Module
- * 
+ *
  * SECURITY FIX (#79): Encrypts sensitive tokens (API keys, secrets) at rest
  * Uses the same AES-256-GCM encryption as certificate.ts for consistency
- * 
+ *
  * Tokens encrypted: mpAccessToken, mpRefreshToken, mpWebhookSecret, waApiToken, waWebhookSecret
+ *
+ * PASSO 6 (CFG-05): sem `CERT_ENCRYPTION_KEY` este módulo **lança** em vez de
+ * gravar em texto puro. O comportamento antigo era "se NODE_ENV !== 'production',
+ * grava plaintext com um console.warn" — o que significa que um staging, um
+ * container sem NODE_ENV, ou qualquer valor diferente de exatamente "production"
+ * persistia token de pagamento legível no banco, sem falhar nada. `NODE_ENV` não é
+ * um sinal confiável de "posso ser inseguro"; agora é opt-in explícito
+ * (`ALLOW_INSECURE_PLAINTEXT_TOKENS=true`, ignorado em produção).
  */
 
 import { encryptPassword, decryptPassword } from '@/lib/sefaz/certificate';
+import { readEnv } from '@/lib/env';
 
 // Prefix to identify encrypted tokens (vs plaintext legacy tokens)
 const ENCRYPTED_PREFIX = 'ENC:';
 
 /**
- * Encrypt a sensitive token for storage
- * Returns 'ENC:<encrypted_data>' format
- * 
- * If encryption fails (e.g., CERT_ENCRYPTION_KEY not set), returns the plaintext token
- * with a warning — this allows the system to continue working in development
+ * Encrypt a sensitive token for storage. Returns 'ENC:<encrypted_data>'.
+ *
+ * Lança quando não é possível criptografar. A única exceção é o opt-in explícito
+ * `ALLOW_INSECURE_PLAINTEXT_TOKENS=true` fora de produção, que existe para
+ * desenvolvimento local e para os testes — e que `readEnv()` recusa em produção.
  */
 export function encryptToken(plaintext: string | null | undefined): string | null {
   if (!plaintext) return null;
-  
+
   // Already encrypted — don't double-encrypt
   if (plaintext.startsWith(ENCRYPTED_PREFIX)) return plaintext;
-  
+
+  const { config } = readEnv();
   try {
     const encrypted = encryptPassword(plaintext);
     return `${ENCRYPTED_PREFIX}${encrypted}`;
   } catch (error) {
-    if (process.env.NODE_ENV === 'production') {
-      throw error;
+    if (config.allowInsecurePlaintextTokens) {
+      console.warn(
+        '[TokenEncryption] ALLOW_INSECURE_PLAINTEXT_TOKENS=true: gravando token em texto puro. ' +
+          'Válido apenas fora de produção — defina CERT_ENCRYPTION_KEY para corrigir.'
+      );
+      return plaintext;
     }
-    console.warn('[TokenEncryption] Failed to encrypt token - CERT_ENCRYPTION_KEY may not be set. Storing as plaintext.');
-    return plaintext;
+    const motivo = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      'Não foi possível criptografar o token para armazenamento: ' + motivo +
+        ' Defina CERT_ENCRYPTION_KEY (mínimo de 32 caracteres). Nada foi gravado em texto puro.'
+    );
   }
 }
 
 /**
- * Decrypt a sensitive token from storage
- * Handles both encrypted ('ENC:...') and legacy plaintext formats
+ * Decrypt a sensitive token from storage.
+ * Handles both encrypted ('ENC:...') and legacy plaintext formats.
+ *
+ * O formato plaintext continua sendo lido para não quebrar registros gravados
+ * antes da correção — mas nada mais **produz** esse formato (ver `encryptToken`).
  */
 export function decryptToken(stored: string | null | undefined): string | null {
   if (!stored) return null;
-  
+
   // Not encrypted (legacy plaintext)
   if (!stored.startsWith(ENCRYPTED_PREFIX)) return stored;
-  
+
   // Remove prefix and decrypt
   const encryptedData = stored.substring(ENCRYPTED_PREFIX.length);
   try {
     return decryptPassword(encryptedData);
   } catch (error) {
-    console.error('[TokenEncryption] Failed to decrypt token:', error);
+    // Devolver null (e não lançar) mantém o comportamento de quem chama: um
+    // segredo ilegível é tratado como "não configurado", nunca como vazio válido.
+    console.error('[TokenEncryption] Failed to decrypt token:', error instanceof Error ? error.message : error);
     return null;
   }
 }

@@ -75,46 +75,137 @@ describe('Security: XSS Prevention (AUD-01)', () => {
 // ============================================================================
 import { encryptToken, decryptToken, isTokenEncrypted } from '@/lib/token-encryption';
 
-describe('Security: Token Encryption (AUD-02)', () => {
-  it('deve criptografar tokens com prefixo ENC: quando CERT_ENCRYPTION_KEY configurado', () => {
-    // Note: encryptToken requires CERT_ENCRYPTION_KEY to be set before module load
-    // If encryption fails (no key), it falls back to plaintext with a warning
-    const plain = 'APP_USR-12345-test-token';
-    const encrypted = encryptToken(plain);
-    // Either encrypted with ENC: prefix, or falls back to plaintext
-    if (encrypted?.startsWith('ENC:')) {
-      expect(encrypted).not.toBe(plain);
+/**
+ * PASSO 6 (CFG-05): o comportamento documentado aqui mudou de propósito.
+ *
+ * Antes, sem CERT_ENCRYPTION_KEY, `encryptToken` devolvia o **plaintext** com um
+ * `console.warn` quando NODE_ENV não era exatamente "production" — o teste abaixo
+ * aceitava os dois desfechos ("graceful degradation"). Isso significava que um
+ * staging, ou um container sem NODE_ENV, gravava token de pagamento legível no
+ * banco sem que nada falhasse. Agora a ausência de chave lança, e gravar em texto
+ * puro exige opt-in explícito fora de produção.
+ */
+describe('Security: Token Encryption (AUD-02 / CFG-05)', () => {
+  const CHAVE = 'test-encryption-key-for-unit-tests-min-32chars';
+  const salvo: Record<string, string | undefined> = {};
+
+  function preparar(overrides: Record<string, string | undefined>) {
+    for (const key of ['CERT_ENCRYPTION_KEY', 'NODE_ENV', 'ALLOW_INSECURE_PLAINTEXT_TOKENS']) {
+      if (!(key in salvo)) salvo[key] = process.env[key];
+      if (overrides[key] === undefined) delete process.env[key];
+      else process.env[key] = overrides[key];
+    }
+  }
+
+  function restaurar() {
+    for (const [key, value] of Object.entries(salvo)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    for (const key of Object.keys(salvo)) delete salvo[key];
+  }
+
+  it('criptografa com prefixo ENC: quando CERT_ENCRYPTION_KEY está configurado', () => {
+    preparar({ CERT_ENCRYPTION_KEY: CHAVE, NODE_ENV: 'production', ALLOW_INSECURE_PLAINTEXT_TOKENS: undefined });
+    try {
+      const plain = 'APP_USR-12345-test-token';
+      const encrypted = encryptToken(plain);
       expect(encrypted?.startsWith('ENC:')).toBe(true);
-    } else {
-      // In test environment without CERT_ENCRYPTION_KEY, plaintext is returned
-      // This is the documented graceful degradation
-      expect(encrypted).toBe(plain);
+      expect(encrypted).not.toBe(plain);
+      expect(encrypted).not.toContain(plain);
+    } finally {
+      restaurar();
     }
   });
 
-  it('deve descriptografar tokens corretamente', () => {
-    const plain = 'APP_USR-12345-test-token';
-    const encrypted = encryptToken(plain);
-    const decrypted = decryptToken(encrypted);
-    expect(decrypted).toBe(plain);
+  it('descriptografa de volta ao valor original', () => {
+    preparar({ CERT_ENCRYPTION_KEY: CHAVE, NODE_ENV: 'production', ALLOW_INSECURE_PLAINTEXT_TOKENS: undefined });
+    try {
+      const plain = 'APP_USR-12345-test-token';
+      expect(decryptToken(encryptToken(plain))).toBe(plain);
+    } finally {
+      restaurar();
+    }
   });
 
-  it('deve detectar tokens já criptografados', () => {
+  it('LANÇA em vez de gravar em texto puro quando falta a chave (mesmo em staging)', () => {
+    // "staging" era exatamente o caso que o código antigo tratava como
+    // desenvolvimento e gravava plaintext.
+    for (const ambiente of ['staging', 'production', 'homolog']) {
+      preparar({ CERT_ENCRYPTION_KEY: undefined, NODE_ENV: ambiente, ALLOW_INSECURE_PLAINTEXT_TOKENS: undefined });
+      try {
+        expect(() => encryptToken('APP_USR-token-real')).toThrow(/CERT_ENCRYPTION_KEY/);
+      } finally {
+        restaurar();
+      }
+    }
+  });
+
+  it('lança também quando NODE_ENV está ausente (container mal configurado)', () => {
+    preparar({ CERT_ENCRYPTION_KEY: undefined, NODE_ENV: undefined, ALLOW_INSECURE_PLAINTEXT_TOKENS: undefined });
+    try {
+      expect(() => encryptToken('APP_USR-token-real')).toThrow(/CERT_ENCRYPTION_KEY/);
+    } finally {
+      restaurar();
+    }
+  });
+
+  it('texto puro só com opt-in explícito e fora de produção', () => {
+    preparar({
+      CERT_ENCRYPTION_KEY: undefined,
+      NODE_ENV: 'development',
+      ALLOW_INSECURE_PLAINTEXT_TOKENS: 'true',
+    });
+    try {
+      expect(encryptToken('APP_USR-token-local')).toBe('APP_USR-token-local');
+    } finally {
+      restaurar();
+    }
+
+    // Em produção o opt-in não é honrado: a partida já teria recusado a variável.
+    preparar({
+      CERT_ENCRYPTION_KEY: undefined,
+      NODE_ENV: 'production',
+      ALLOW_INSECURE_PLAINTEXT_TOKENS: 'true',
+    });
+    try {
+      expect(() => encryptToken('APP_USR-token-real')).toThrow(/CERT_ENCRYPTION_KEY/);
+    } finally {
+      restaurar();
+    }
+  });
+
+  it('detecta tokens já criptografados', () => {
     expect(isTokenEncrypted('ENC:abc123')).toBe(true);
     expect(isTokenEncrypted('APP_USR-plain-token')).toBe(false);
     expect(isTokenEncrypted(null)).toBe(false);
   });
 
-  it('não deve duplamente criptografar', () => {
-    const plain = 'test-token';
-    const encrypted1 = encryptToken(plain);
-    const encrypted2 = encryptToken(encrypted1);
-    expect(encrypted1).toBe(encrypted2);
+  it('não criptografa duas vezes', () => {
+    preparar({ CERT_ENCRYPTION_KEY: CHAVE, NODE_ENV: 'production', ALLOW_INSECURE_PLAINTEXT_TOKENS: undefined });
+    try {
+      const plain = 'test-token';
+      const encrypted1 = encryptToken(plain);
+      expect(encryptToken(encrypted1)).toBe(encrypted1);
+    } finally {
+      restaurar();
+    }
   });
 
-  it('deve retornar null para tokens nulos', () => {
+  it('retorna null para tokens nulos', () => {
     expect(encryptToken(null)).toBeNull();
     expect(decryptToken(null)).toBeNull();
+  });
+
+  it('legacy plaintext continua legível, mas nada mais o produz', () => {
+    preparar({ CERT_ENCRYPTION_KEY: CHAVE, NODE_ENV: 'production', ALLOW_INSECURE_PLAINTEXT_TOKENS: undefined });
+    try {
+      // Registros gravados antes da correção não podem ficar inutilizáveis.
+      expect(decryptToken('APP_USR-legacy-sem-prefixo')).toBe('APP_USR-legacy-sem-prefixo');
+      expect(encryptToken('APP_USR-legacy-sem-prefixo')?.startsWith('ENC:')).toBe(true);
+    } finally {
+      restaurar();
+    }
   });
 });
 

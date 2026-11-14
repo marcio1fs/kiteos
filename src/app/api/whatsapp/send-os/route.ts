@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
+import { safeExternalFetch } from '@/lib/safe-url';
 import { decryptToken } from '@/lib/token-encryption';
+import { assertFeature, isPlanError, planErrorBody } from '@/lib/plans';
 
 /**
  * Format a phone number to international format for WhatsApp
@@ -224,7 +226,7 @@ async function sendViaZApi(
   const baseUrl = apiUrl.replace(/\/$/, '');
   const url = `${baseUrl}/instances/${instance}/token/${token}/send-text`;
 
-  const response = await fetch(url, {
+  const response = await safeExternalFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -234,7 +236,7 @@ async function sendViaZApi(
       phone: phone,
       message: message,
     }),
-    signal: AbortSignal.timeout(15000),
+    timeoutMs: 15000,
   });
 
   if (response.ok) {
@@ -259,7 +261,7 @@ async function sendViaEvolutionApi(
   const baseUrl = apiUrl.replace(/\/$/, '');
   const url = `${baseUrl}/message/sendText/${instance}`;
 
-  const response = await fetch(url, {
+  const response = await safeExternalFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -269,7 +271,7 @@ async function sendViaEvolutionApi(
       number: phone,
       text: message,
     }),
-    signal: AbortSignal.timeout(15000),
+    timeoutMs: 15000,
   });
 
   if (response.ok) {
@@ -332,6 +334,17 @@ export async function POST(request: NextRequest) {
         { success: false, error: auth.error.message },
         { status: auth.error.status }
       );
+    }
+
+    // WhatsApp delivery is a paid feature. Enforced server-side: hiding the button
+    // in the UI is not authorization.
+    try {
+      await assertFeature(db, officeId, 'whatsapp');
+    } catch (planError) {
+      if (isPlanError(planError)) {
+        return NextResponse.json(planErrorBody(planError).body, { status: planError.status });
+      }
+      throw planError;
     }
 
     // Get office with WhatsApp config

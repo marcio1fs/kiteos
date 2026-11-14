@@ -17,7 +17,7 @@ export async function GET(
     const { id } = await params;
 
     const part = await db.part.findFirst({
-      where: { id, deleted: false },
+      where: { id, officeId: auth.payload.officeId, deleted: false },
       include: {
         supplier: {
           select: { id: true, razaoSocial: true, nomeFantasia: true, phone: true, email: true },
@@ -82,7 +82,7 @@ export async function PUT(
     } = body;
 
     const existing = await db.part.findFirst({
-      where: { id, deleted: false },
+      where: { id, officeId: auth.payload.officeId, deleted: false },
     });
 
     if (!existing) {
@@ -146,7 +146,7 @@ export async function PUT(
     if (supplierId !== undefined) updateData.supplierId = supplierId || null;
 
     const updated = await db.part.update({
-      where: { id },
+      where: { id, officeId: existing.officeId },
       data: updateData,
       include: {
         supplier: {
@@ -193,7 +193,7 @@ export async function DELETE(
     const { id } = await params;
 
     const existing = await db.part.findFirst({
-      where: { id, deleted: false },
+      where: { id, officeId: auth.payload.officeId, deleted: false },
     });
 
     if (!existing) {
@@ -211,6 +211,7 @@ export async function DELETE(
     const activeUsage = await db.serviceOrderItem.findFirst({
       where: {
         partId: id,
+        officeId: existing.officeId,
         deleted: false,
         serviceOrder: {
           status: { in: ['ABERTA', 'EM_EXECUCAO'] },
@@ -228,13 +229,13 @@ export async function DELETE(
 
     await db.$transaction(async (tx) => {
       await tx.part.update({
-        where: { id },
+        where: { id, officeId: existing.officeId },
         data: { deleted: true },
       });
 
       // Soft delete stock movements
       await tx.stockMovement.updateMany({
-        where: { partId: id },
+        where: { partId: id, officeId: existing.officeId },
         data: { deleted: true },
       });
 

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { CommercialError, commercialErrorResponse, idSchema, moneySchema, paymentMethodSchema, toCents, fromCents } from '@/lib/commercial';
+import { z } from 'zod';
 
 // GET /api/financial/[id] - Get financial entry by id
 export async function GET(
@@ -19,6 +21,7 @@ export async function GET(
     const entry = await db.financialEntry.findFirst({
       where: {
         id,
+        officeId: auth.payload.officeId,
         deleted: false,
       },
       include: {
@@ -92,199 +95,108 @@ export async function GET(
   }
 }
 
-// PUT /api/financial/[id] - Update financial entry
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+const updateSchema = z.object({
+  type: z.enum(['PAGAR', 'RECEBER']).optional(),
+  category: z.string().trim().max(100).nullish(),
+  description: z.string().trim().min(1).max(500).optional(),
+  amount: moneySchema.refine(v => v > 0, 'amount deve ser maior que zero').optional(),
+  discount: moneySchema.optional(),
+  interest: moneySchema.optional(),
+  dueDate: z.string().datetime().optional(),
+  paymentMethod: paymentMethodSchema.nullish(),
+  reference: z.string().max(200).nullish(),
+  supplierId: idSchema.nullish(),
+  status: z.enum(['PENDENTE', 'ATRASADO']).optional(),
+}).strict();
+
+// PUT /api/financial/[id] - Update an unpaid, manually-managed entry
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(request);
-    if (!auth.payload) {
-      return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
-    }
-
+    const auth = await requireAuth(request, undefined, 'ADMIN');
+    if (!auth.payload) return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
     const { id } = await params;
-    const body = await request.json();
+    const input = updateSchema.parse(await request.json());
+    const officeId = auth.payload.officeId;
 
-    // Check if entry exists and is not deleted
-    const existing = await db.financialEntry.findFirst({
-      where: { id, deleted: false },
-    });
+    const entry = await db.$transaction(async (tx) => {
+      const existing = await tx.financialEntry.findFirst({ where: { id, officeId, deleted: false } });
+      if (!existing) throw new CommercialError('Entrada financeira não encontrada', 404);
+      if (existing.status === 'PAGO') throw new CommercialError('Não é possível editar uma entrada já paga', 409);
+      if (existing.status === 'CANCELADO') throw new CommercialError('Não é possível editar uma entrada cancelada', 409);
+      if (existing.saleId) throw new CommercialError('Lançamentos gerados por vendas são alterados apenas pelo fluxo de vendas', 409);
 
-    if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Entrada financeira não encontrada' },
-        { status: 404 }
-      );
-    }
+      if (input.supplierId) {
+        const supplier = await tx.supplier.findFirst({ where: { id: input.supplierId, officeId, deleted: false } });
+        if (!supplier) throw new CommercialError('Fornecedor não encontrado nesta oficina', 404);
+      }
 
-    if (existing.officeId !== auth.payload.officeId) {
-      return NextResponse.json({ success: false, error: 'Acesso negado' }, { status: 403 });
-    }
+      const amountCents = toCents(input.amount ?? Number(existing.amount));
+      const discountCents = toCents(input.discount ?? Number(existing.discount));
+      const interestCents = toCents(input.interest ?? Number(existing.interest));
+      if (discountCents > amountCents) throw new CommercialError('Desconto não pode ser maior que o valor', 400);
+      const totalCents = amountCents - discountCents + interestCents;
+      const dueDate = input.dueDate ? new Date(input.dueDate) : existing.dueDate;
+      let status = input.status ?? existing.status;
+      if (status === 'PENDENTE' && dueDate < new Date()) status = 'ATRASADO';
+      if (status === 'ATRASADO' && dueDate >= new Date()) status = 'PENDENTE';
 
-    // Don't allow editing paid entries
-    if (existing.status === 'PAGO') {
-      return NextResponse.json(
-        { success: false, error: 'Não é possível editar uma entrada já paga' },
-        { status: 400 }
-      );
-    }
-
-    const {
-      type,
-      category,
-      description,
-      amount,
-      discount,
-      interest,
-      dueDate,
-      paymentMethod,
-      reference,
-      supplierId,
-      status,
-    } = body;
-
-    // Validate amount if provided
-    if (amount !== undefined && amount <= 0) {
-      return NextResponse.json(
-        { success: false, error: 'amount deve ser maior que zero' },
-        { status: 400 }
-      );
-    }
-
-    if (discount !== undefined && discount < 0) {
-      return NextResponse.json(
-        { success: false, error: 'discount não pode ser negativo' },
-        { status: 400 }
-      );
-    }
-
-    if (interest !== undefined && interest < 0) {
-      return NextResponse.json(
-        { success: false, error: 'interest não pode ser negativo' },
-        { status: 400 }
-      );
-    }
-
-    // Calculate totalAmount with updated values
-    const newAmount = amount !== undefined ? amount : existing.amount;
-    const newDiscount = discount !== undefined ? discount : existing.discount;
-    const newInterest = interest !== undefined ? interest : existing.interest;
-    const totalAmount = newAmount - newDiscount + newInterest;
-
-    // Auto-set status based on dueDate
-    const now = new Date();
-    const newDueDate = dueDate ? new Date(dueDate) : existing.dueDate;
-    let newStatus: string = status || existing.status;
-
-    // AUD-H02 FIX: Block direct PAGO/CANCELADO status changes via PUT
-    // Payment approval must go through /api/financial/pay/[id] (ADMIN/OWNER only)
-    // Cancellation must go through DELETE endpoint
-    if (status === 'PAGO') {
-      return NextResponse.json(
-        { success: false, error: 'Use o endpoint /api/financial/pay/[id] para aprovar pagamentos' },
-        { status: 400 }
-      );
-    }
-    if (status === 'CANCELADO') {
-      return NextResponse.json(
-        { success: false, error: 'Use o endpoint DELETE para cancelar entradas financeiras' },
-        { status: 400 }
-      );
-    }
-
-    if (newStatus === 'PENDENTE' && newDueDate < now) {
-      newStatus = 'ATRASADO';
-    } else if (newStatus === 'ATRASADO' && newDueDate >= now) {
-      newStatus = 'PENDENTE';
-    }
-
-    const updateData: Record<string, unknown> = {
-      totalAmount,
-      status: newStatus,
-    };
-
-    if (type !== undefined) updateData.type = type;
-    if (category !== undefined) updateData.category = category;
-    if (description !== undefined) updateData.description = description;
-    if (amount !== undefined) updateData.amount = amount;
-    if (discount !== undefined) updateData.discount = discount;
-    if (interest !== undefined) updateData.interest = interest;
-    if (dueDate !== undefined) updateData.dueDate = new Date(dueDate);
-    if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
-    if (reference !== undefined) updateData.reference = reference;
-    if (supplierId !== undefined) updateData.supplierId = supplierId || null;
-
-    const entry = await db.financialEntry.update({
-      where: { id },
-      data: updateData,
-      include: {
-        supplier: {
-          select: {
-            id: true,
-            razaoSocial: true,
-            nomeFantasia: true,
-            cnpj: true,
-          },
+      const claimed = await tx.financialEntry.updateMany({
+        where: { id, officeId, deleted: false, status: { in: ['PENDENTE', 'ATRASADO'] } },
+        data: {
+          type: input.type ?? existing.type,
+          category: input.category !== undefined ? input.category : existing.category,
+          description: input.description ?? existing.description,
+          amount: fromCents(amountCents), discount: fromCents(discountCents), interest: fromCents(interestCents),
+          totalAmount: fromCents(totalCents), dueDate, status,
+          paymentMethod: input.paymentMethod !== undefined ? input.paymentMethod : existing.paymentMethod,
+          reference: input.reference !== undefined ? input.reference : existing.reference,
+          supplierId: input.supplierId !== undefined ? input.supplierId : existing.supplierId,
         },
-      },
+      });
+      if (claimed.count !== 1) throw new CommercialError('Lançamento alterado por outra operação. Recarregue e tente novamente.', 409);
+      await tx.auditLog.create({
+        data: { action: 'UPDATE', entity: 'FinancialEntry', entityId: id, details: JSON.stringify({ totalAmount: fromCents(totalCents) }), userId: auth.payload.userId, officeId },
+      });
+      return tx.financialEntry.findFirst({ where: { id, officeId }, include: { supplier: { select: { id: true, razaoSocial: true, nomeFantasia: true, cnpj: true } } } });
     });
 
-    return NextResponse.json({
-      success: true,
-      data: entry,
-    });
+    return NextResponse.json({ success: true, data: entry });
   } catch (error) {
+    const known = commercialErrorResponse(error);
+    if (known) return NextResponse.json(known.body, { status: known.status });
     logger.error('Error updating financial entry:', { error: error instanceof Error ? error.message : String(error) });
-    return NextResponse.json(
-      { success: false, error: 'Erro ao atualizar entrada financeira' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Erro ao atualizar entrada financeira' }, { status: 500 });
   }
 }
 
-// DELETE /api/financial/[id] - Soft delete
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+// DELETE /api/financial/[id] - Cancel an unpaid manual entry; paid entries are immutable.
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(request);
-    if (!auth.payload) {
-      return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
-    }
-
+    const auth = await requireAuth(request, undefined, 'ADMIN');
+    if (!auth.payload) return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
     const { id } = await params;
+    const officeId = auth.payload.officeId;
 
-    const existing = await db.financialEntry.findFirst({
-      where: { id, deleted: false },
+    await db.$transaction(async (tx) => {
+      const existing = await tx.financialEntry.findFirst({ where: { id, officeId, deleted: false } });
+      if (!existing) throw new CommercialError('Entrada financeira não encontrada', 404);
+      if (existing.status === 'PAGO') throw new CommercialError('Não é possível excluir uma entrada paga. Registre o estorno antes de cancelar.', 409);
+      if (existing.saleId) throw new CommercialError('Lançamentos gerados por vendas devem ser cancelados pelo fluxo de vendas', 409);
+      const claimed = await tx.financialEntry.updateMany({
+        where: { id, officeId, deleted: false, status: { in: ['PENDENTE', 'ATRASADO', 'CANCELADO'] } },
+        data: { deleted: true, status: 'CANCELADO' },
+      });
+      if (claimed.count !== 1) throw new CommercialError('Lançamento alterado por outra operação', 409);
+      await tx.auditLog.create({
+        data: { action: 'DELETE', entity: 'FinancialEntry', entityId: id, details: JSON.stringify({ previousStatus: existing.status }), userId: auth.payload.userId, officeId },
+      });
     });
 
-    if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Entrada financeira não encontrada' },
-        { status: 404 }
-      );
-    }
-
-    if (existing.officeId !== auth.payload.officeId) {
-      return NextResponse.json({ success: false, error: 'Acesso negado' }, { status: 403 });
-    }
-
-    await db.financialEntry.update({
-      where: { id },
-      data: { deleted: true },
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: { message: 'Entrada financeira removida com sucesso' },
-    });
+    return NextResponse.json({ success: true, data: { message: 'Entrada financeira cancelada com sucesso' } });
   } catch (error) {
+    const known = commercialErrorResponse(error);
+    if (known) return NextResponse.json(known.body, { status: known.status });
     logger.error('Error deleting financial entry:', { error: error instanceof Error ? error.message : String(error) });
-    return NextResponse.json(
-      { success: false, error: 'Erro ao remover entrada financeira' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Erro ao remover entrada financeira' }, { status: 500 });
   }
 }

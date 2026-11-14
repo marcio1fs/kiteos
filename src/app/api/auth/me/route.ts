@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, isPlatformAdmin } from '@/lib/auth';
 
 // SEC-01 FIX: Replaced verifyToken + getTokenFromHeaders with requireAuth
 export async function GET(request: NextRequest) {
@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
           active: user.active,
           officeId: user.officeId,
           createdAt: user.createdAt,
+          isPlatformAdmin: isPlatformAdmin(user.id),
         },
         office: {
           id: user.office.id,

@@ -68,7 +68,12 @@ export async function POST(request: NextRequest) {
     });
 
     // Simulate sending based on type
-    let sendResult: { success: boolean; method: string; details: string };
+    /**
+     * NOT-01: `notIntegrated` separa "tentamos entregar e falhou" de "não existe
+     * integração para tentar". Só o primeiro pode virar FALHOU; o segundo continua
+     * PENDENTE, porque gravar ENVIADA aqui é afirmar uma entrega que não houve.
+     */
+    let sendResult: { success: boolean; method: string; details: string; notIntegrated?: boolean };
 
     try {
       switch (type) {
@@ -136,21 +141,24 @@ export async function POST(request: NextRequest) {
             }
           } else {
             sendResult = {
-              success: true,
-              method: 'WHATSAPP_SIMULATED',
-              details: `WhatsApp não configurado. Mensagem simulada para ${recipient}. Configure a API no perfil da oficina.`,
+              success: false,
+              notIntegrated: true,
+              method: 'WHATSAPP_NAO_INTEGRADO',
+              details: `WhatsApp não configurado para esta oficina — nada foi enviado a ${recipient}. Configure a API no perfil da oficina.`,
             };
           }
           break;
         }
 
         case 'EMAIL':
-          // SEC-14/NOT-01 FIX: EMAIL is SIMULATED — not yet integrated with an email provider (SendGrid/SES)
-          // In production, replace this block with actual email service integration
+          // NOT-01/sonda 15: não existe provedor de e-mail integrado (SendGrid/SES/
+          // SMTP). Nada foi enviado, então o registro não pode sair como ENVIADA:
+          // fica PENDENTE e a resposta diz explicitamente que não houve entrega.
           sendResult = {
-            success: true,
-            method: 'EMAIL_SIMULATED',
-            details: `⚠️ EMAIL não integrado — mensagem simulada para ${recipient}. Integrar com SendGrid/SES em produção.`,
+            success: false,
+            notIntegrated: true,
+            method: 'EMAIL_NAO_INTEGRADO',
+            details: `E-mail não integrado — nada foi enviado para ${recipient}. Integre um provedor (SendGrid/SES/SMTP) para habilitar a entrega.`,
           };
           break;
 
@@ -171,13 +179,21 @@ export async function POST(request: NextRequest) {
           };
       }
 
-      // Update notification status
+      // ENVIADA só com entrega aceita pelo provedor. Sem integração, o registro
+      // continua PENDENTE (nada foi tentado); falha real de entrega vira FALHOU.
       if (sendResult.success) {
         await db.notification.update({
           where: { id: notification.id },
           data: {
             status: 'ENVIADA',
             sentAt: new Date(),
+          },
+        });
+      } else if (sendResult.notIntegrated) {
+        await db.notification.update({
+          where: { id: notification.id },
+          data: {
+            status: 'PENDENTE',
           },
         });
       } else {
@@ -224,7 +240,11 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({
-      success: true,
+      // A notificação foi criada, mas "criada" não é "entregue": sem provedor,
+      // success sai false para o chamador não acreditar numa entrega inexistente.
+      success: sendResult.success,
+      delivered: sendResult.success,
+      notIntegrated: sendResult.notIntegrated === true,
       data: {
         notification: updatedNotification,
         sendResult,

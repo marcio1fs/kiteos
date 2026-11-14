@@ -21,7 +21,18 @@ const PUBLIC_ROUTES = [
   '/api/mercadopago/subscription-webhook',
   '/api/mercadopago/subscription-return',
   '/api/mercadopago/webhook',
+  // PASSO 6 (CFG-02): liveness/readiness para orquestradores e para o HEALTHCHECK
+  // do container.
+  '/api/health',
+  '/api/ready',
 ];
+
+/**
+ * Rotas de infraestrutura. Ficam fora do rate limit de propósito: orquestradores e
+ * balanceadores chamam de um único IP em intervalo fixo, e limitá-las faz a
+ * instância ser marcada não-saudável e reiniciada em cascata.
+ */
+const HEALTH_ROUTES = ['/api/health', '/api/ready'];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -34,6 +45,10 @@ export async function proxy(request: NextRequest) {
 
   // Only protect API routes
   if (!pathname.startsWith('/api/')) {
+    return NextResponse.next();
+  }
+
+  if (HEALTH_ROUTES.includes(pathname)) {
     return NextResponse.next();
   }
 

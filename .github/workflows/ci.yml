@@ -1,0 +1,218 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # Types, lint and the suites that run against fakes. No PostgreSQL service
+  # here: DATABASE_URL only needs to be parseable, because src/lib/db.ts builds
+  # a PrismaClient at import time and none of these suites opens a connection.
+  quality:
+    name: Tipos, lint e testes
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://kiteos:kiteos@localhost:5432/kiteos_unused?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # An invalid schema fails here, so this doubles as a schema-validity gate.
+      - name: Gerar Prisma Client
+        run: npx prisma generate
+
+      # Canonical schema validation. It downloads the schema-engine binary, which
+      # failed transiently on the very first run of this workflow and took the rest
+      # of the job with it — hence the single retry.
+      - name: Validar schema.prisma
+        run: npx prisma validate || (sleep 15 && npx prisma validate)
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Testes do produto
+        run: npx vitest run src/__tests__/ --reporter=default --reporter=github-actions
+
+      - name: Testes de aceitação
+        run: |
+          set -o pipefail
+          npm run test:acceptance -- --reporter=default --reporter=github-actions 2>&1 \
+            | sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
+            | tee /tmp/acceptance.log
+
+      - name: Publicar resumo da aceitação
+        if: always()
+        run: |
+          resumo=$(grep -E '^ *(Test Files|Tests) ' /tmp/acceptance.log | tr -s ' ' | tr '\n' ' ')
+          echo "::notice title=aceitacao::${resumo:-sem resumo}"
+          if [ -z "$resumo" ]; then
+            echo "::error title=aceitacao::resumo dos testes nao foi capturado"
+            exit 1
+          fi
+
+
+  # Real PostgreSQL: migrations must apply cleanly, must still match
+  # schema.prisma (drift gate) and the concurrency invariants must hold.
+  database:
+    name: Migrations e concorrência (PostgreSQL 17)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: kiteos
+          POSTGRES_PASSWORD: kiteos
+          POSTGRES_DB: kiteos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kiteos -d kiteos_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://kiteos:kiteos@localhost:5432/kiteos_test?schema=public
+      SHADOW_DATABASE_URL: postgresql://kiteos:kiteos@localhost:5432/kiteos_shadow?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # reversal.test.ts drives the production flow through the real PrismaClient,
+      # so this job needs a generated client (the concurrency suite only needs pg).
+      - name: Gerar Prisma Client
+        run: npx prisma generate
+
+      - name: Criar shadow database
+        run: psql "postgresql://kiteos:kiteos@localhost:5432/postgres" -c 'CREATE DATABASE kiteos_shadow'
+
+      - name: Aplicar migrations versionadas
+        run: npx prisma migrate deploy
+
+      # Fails the build if anyone edits schema.prisma without creating a
+      # migration: --exit-code returns non-zero on any difference.
+      - name: Gate de drift (migrations x schema.prisma)
+        run: >-
+          npx prisma migrate diff
+          --from-migrations prisma/migrations
+          --to-schema-datamodel prisma/schema.prisma
+          --shadow-database-url "$SHADOW_DATABASE_URL"
+          --exit-code
+
+      # Skips itself when DATABASE_URL is missing; here it runs for real.
+      # The github-actions reporter republishes failures as check annotations,
+      # which are readable through the API — raw job logs are not always reachable.
+      - name: Testes de integração e concorrência
+        run: |
+          set -o pipefail
+          npm run test:integration -- --reporter=default --reporter=github-actions 2>&1 \
+            | sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
+            | tee /tmp/integration.log
+
+      # Raw job logs are not always reachable from outside GitHub's UI, but check
+      # annotations are. Publish the tally so a green run carries its evidence.
+      - name: Publicar resumo da integração
+        if: always()
+        run: |
+          resumo=$(grep -E '^ *(Test Files|Tests) ' /tmp/integration.log | tr -s ' ' | tr '\n' ' ')
+          echo "::notice title=integracao-postgres-17::${resumo:-sem resumo}"
+          if [ -z "$resumo" ]; then
+            echo "::error title=integracao-postgres-17::resumo dos testes nao foi capturado"
+            exit 1
+          fi
+          if grep -q 'skipped' <<<"$resumo"; then
+            echo "::error title=integracao-postgres-17::testes pulados com DATABASE_URL definido: $resumo"
+            exit 1
+          fi
+
+  # Production build — this is the step that used to fail outright:
+  # `next/font/google` fetched Geist from fonts.gstatic.com on every build.
+  build:
+    name: Build de produção
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://kiteos:kiteos@localhost:5432/kiteos_unused?schema=public
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # Fonts are vendored by the `geist` npm package (next/font/local). On a
+      # runner with network the old code would build fine, so this is the guard
+      # that actually keeps the build offline-safe.
+      - name: Nenhuma fonte pode depender de rede no build
+        run: |
+          # Só import de verdade: texto em comentário não pode derrubar o gate
+          # (a primeira versão deste passo falhou exatamente assim).
+          if grep -rnE "from ['\"]next/font/google['\"]|require\(['\"]next/font/google['\"]\)" src/; then
+            echo "::error::next/font/google voltou — o build volta a depender de rede"
+            exit 1
+          fi
+
+      - name: Gerar Prisma Client
+        run: npx prisma generate
+
+      - name: Build de produção
+        run: npm run build
+
+      - name: Conferir a saída standalone
+        run: |
+          test -f .next/standalone/server.js
+          test -d .next/standalone/.next/static
+          test -d .next/standalone/public
+          ls .next/static/media/*.woff2
+          du -sh .next/standalone
+
+  # The deployable image: keeps Dockerfile and CI from drifting apart.
+  docker:
+    name: Imagem Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir a imagem
+        run: docker build -t kiteos:ci .
+
+      # .dockerignore is what keeps audit artifacts out of the image: Turbopack's
+      # file tracer pulls the whole build context into .next/standalone.
+      - name: Conferir o conteúdo da imagem
+        run: |
+          docker run --rm --entrypoint sh kiteos:ci -c '
+            set -e
+            test -f /app/server.js
+            test -d /app/.next/static
+            test -d /app/public
+            test -d /app/prisma
+            test ! -e /app/audit
+            test ! -e /app/src/__tests__
+            # Publicado como anotação do check: é o único canal legível para quem
+            # não consegue baixar o log bruto do job.
+            echo "::notice title=imagem::node $(node --version) | /app $(du -sh /app | cut -f1)"
+          '

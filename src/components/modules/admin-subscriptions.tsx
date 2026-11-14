@@ -153,19 +153,13 @@ export function AdminSubscriptionsModule() {
   const [filterStatus, setFilterStatus] = useState<string>('')
   const [selectedSubscriber, setSelectedSubscriber] = useState<SubscriberData | null>(null)
 
-  if (user?.role !== 'ADMIN' && user?.role !== 'OWNER') {
-    return (
-      <div className="p-12 text-center text-zinc-500">
-        <Shield className="w-12 h-12 mx-auto text-red-500 mb-3" />
-        <h2 className="text-lg font-bold text-zinc-800">Acesso Restrito</h2>
-        <p className="text-sm text-zinc-600 mt-1">
-          Apenas administradores ou proprietários do sistema têm acesso a esta área.
-        </p>
-      </div>
-    )
-  }
+  // Platform administration is granted by PLATFORM_ADMIN_USER_IDS on the server,
+  // never by the tenant role: an OWNER of one office is not an operator of the
+  // SaaS. The guard below is cosmetic — the API enforces it independently.
+  const isPlatformAdmin = user?.isPlatformAdmin === true
 
   const fetchData = useCallback(async () => {
+    if (!isPlatformAdmin) return
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -183,11 +177,29 @@ export function AdminSubscriptionsModule() {
     } finally {
       setLoading(false)
     }
-  }, [search, filterPlan, filterStatus])
+  }, [isPlatformAdmin, search, filterPlan, filterStatus])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // Hooks must run unconditionally, so the "access restricted" screen is
+  // rendered after them rather than through an early return above.
+  useEffect(() => {
+    if (!isPlatformAdmin) setLoading(false)
+  }, [isPlatformAdmin])
+
+  if (!isPlatformAdmin) {
+    return (
+      <div className="p-12 text-center text-zinc-500">
+        <Shield className="w-12 h-12 mx-auto text-red-500 mb-3" />
+        <h2 className="text-lg font-bold text-zinc-800">Acesso Restrito</h2>
+        <p className="text-sm text-zinc-600 mt-1">
+          Apenas administradores da plataforma têm acesso a esta área.
+        </p>
+      </div>
+    )
+  }
 
   // =============================================
   // SUBSCRIBER DETAIL VIEW

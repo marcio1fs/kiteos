@@ -6,7 +6,7 @@
     "dev": "next dev -p 3000",
     "dev:webpack": "next dev --webpack -p 3000",
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
+    "start": "NODE_ENV=production node .next/standalone/server.js",
     "lint": "eslint .",
     "test": "npx prisma generate && vitest run src/__tests__/",
     "test:watch": "vitest src/__tests__/",
@@ -14,7 +14,11 @@
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "test:acceptance": "vitest run --config vitest.acceptance.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "db:verify": "node audit/tools/verify-migrations-offline.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -62,6 +66,7 @@
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.23.2",
+    "geist": "^1.9.2",
     "input-otp": "^1.4.2",
     "ioredis": "^5.6.1",
     "jose": "^6.2.3",
@@ -93,11 +98,13 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/pg": "^8.15.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "bun-types": "^1.3.4",
     "eslint": "^9",
     "eslint-config-next": "^16.1.1",
+    "pg": "^8.23.1",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.5",
     "typescript": "^5",

@@ -34,8 +34,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Printer,
-} from 'lucide-react'
+  Printer, Undo2 } from 'lucide-react'
 import { printReport, buildReportHeader, fmtCurrency, fmtDate } from '@/lib/print-utils'
 import {
   AreaChart,
@@ -67,11 +66,12 @@ interface FinancialEntry {
   discount: number
   interest: number
   totalAmount: number
-  status: string // PENDENTE, PAGO, ATRASADO, CANCELADO
+  status: string // PENDENTE, PAGO, ATRASADO, CANCELADO, ESTORNADO
   dueDate: string
   paymentDate: string | null
   paymentMethod: string | null
   reference: string | null
+  saleId: string | null
   supplierId: string | null
   supplier?: Supplier | null
   createdAt: string
@@ -149,6 +149,8 @@ function getStatusBadge(status: string) {
       return <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100 gap-1"><AlertCircle className="h-3 w-3" /> Atrasado</Badge>
     case 'CANCELADO':
       return <Badge className="bg-zinc-100 text-zinc-500 border-zinc-200 hover:bg-zinc-100">Cancelado</Badge>
+    case 'ESTORNADO':
+      return <Badge className="bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100 gap-1"><Undo2 className="h-3 w-3" /> Estornado</Badge>
     default:
       return <Badge variant="outline">{status}</Badge>
   }
@@ -417,6 +419,35 @@ export default function FinancialModule() {
       console.error('Erro ao pagar:', err)
     } finally {
       setSavingPayment(false)
+    }
+  }
+
+  /**
+   * Estorno de um lançamento pago: o original permanece nos livros como
+   * ESTORNADO e um lançamento compensatório do tipo oposto é criado. Lançamentos
+   * de venda são estornados pela venda, que também devolve o estoque.
+   */
+  const handleReverseEntry = async (entry: FinancialEntry) => {
+    const reason = prompt('Motivo do estorno (obrigatório, fica na trilha de auditoria):')
+    if (!reason || reason.trim().length < 3) {
+      if (reason !== null) alert('Informe um motivo com pelo menos 3 caracteres')
+      return
+    }
+    try {
+      const res = await apiFetch(`/api/financial/${entry.id}/estorno`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason.trim() }),
+      })
+      if (res.success) {
+        fetchPagar()
+        fetchReceber()
+        fetchDashboard()
+      } else {
+        alert(res.error || 'Erro ao estornar lançamento')
+      }
+    } catch (err) {
+      console.error('Erro ao estornar:', err)
+      alert('Erro de conexão')
     }
   }
 
@@ -781,6 +812,7 @@ export default function FinancialModule() {
                       <SelectItem value="PAGO">Pago</SelectItem>
                       <SelectItem value="ATRASADO">Atrasado</SelectItem>
                       <SelectItem value="CANCELADO">Cancelado</SelectItem>
+                      <SelectItem value="ESTORNADO">Estornado</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -836,10 +868,16 @@ export default function FinancialModule() {
                             <TableCell className="text-sm">{formatDate(entry.dueDate)}</TableCell>
                             <TableCell>{getStatusBadge(entry.status)}</TableCell>
                             <TableCell className="text-right">
-                              {entry.status !== 'PAGO' && entry.status !== 'CANCELADO' && (
+                              {entry.status !== 'PAGO' && entry.status !== 'CANCELADO' && entry.status !== 'ESTORNADO' && (
                                 <Button size="sm" variant="outline" onClick={() => handleOpenPay(entry)} className="gap-1 text-emerald-600 border-emerald-200 hover:bg-emerald-50">
                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                   Pagar
+                                </Button>
+                              )}
+                              {entry.status === 'PAGO' && !entry.saleId && (
+                                <Button size="sm" variant="outline" onClick={() => handleReverseEntry(entry)} className="gap-1 text-orange-600 border-orange-200 hover:bg-orange-50">
+                                  <Undo2 className="h-3.5 w-3.5" />
+                                  Estornar
                                 </Button>
                               )}
                             </TableCell>
@@ -899,6 +937,7 @@ export default function FinancialModule() {
                       <SelectItem value="PAGO">Recebido</SelectItem>
                       <SelectItem value="ATRASADO">Atrasado</SelectItem>
                       <SelectItem value="CANCELADO">Cancelado</SelectItem>
+                      <SelectItem value="ESTORNADO">Estornado</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -954,10 +993,16 @@ export default function FinancialModule() {
                             <TableCell className="text-sm">{formatDate(entry.dueDate)}</TableCell>
                             <TableCell>{getStatusBadge(entry.status)}</TableCell>
                             <TableCell className="text-right">
-                              {entry.status !== 'PAGO' && entry.status !== 'CANCELADO' && (
+                              {entry.status !== 'PAGO' && entry.status !== 'CANCELADO' && entry.status !== 'ESTORNADO' && (
                                 <Button size="sm" variant="outline" onClick={() => handleOpenPay(entry)} className="gap-1 text-emerald-600 border-emerald-200 hover:bg-emerald-50">
                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                   Receber
+                                </Button>
+                              )}
+                              {entry.status === 'PAGO' && !entry.saleId && (
+                                <Button size="sm" variant="outline" onClick={() => handleReverseEntry(entry)} className="gap-1 text-orange-600 border-orange-200 hover:bg-orange-50">
+                                  <Undo2 className="h-3.5 w-3.5" />
+                                  Estornar
                                 </Button>
                               )}
                             </TableCell>

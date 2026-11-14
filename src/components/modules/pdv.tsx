@@ -44,6 +44,7 @@ import {
   ChevronRight,
   Printer,
   FileText,
+  Undo2,
 } from 'lucide-react'
 
 // =============================================
@@ -130,6 +131,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   ABERTA: { label: 'Aberta', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
   PAGA: { label: 'Paga', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
   CANCELADA: { label: 'Cancelada', color: 'bg-red-100 text-red-800 border-red-200' },
+  ESTORNADA: { label: 'Estornada', color: 'bg-orange-100 text-orange-800 border-orange-200' },
 }
 
 import { printReport, buildReportHeader, fmtCurrency, fmtDate } from '@/lib/print-utils'
@@ -613,6 +615,33 @@ export function PDVModule() {
     }
   }
 
+  /**
+   * Estorno de venda paga: devolve o dinheiro no financeiro (lançamento
+   * compensatório) e o estoque, e marca a venda como ESTORNADA. Nada é apagado.
+   */
+  const handleReverseSale = async (saleId: string) => {
+    const reason = prompt('Motivo do estorno (obrigatório, fica na trilha de auditoria):')
+    if (!reason || reason.trim().length < 3) {
+      if (reason !== null) alert('Informe um motivo com pelo menos 3 caracteres')
+      return
+    }
+    if (!confirm('Estornar esta venda? O valor volta ao financeiro e o estoque é devolvido.')) return
+    try {
+      const res = await apiFetch(`/api/sales/${saleId}/estorno`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason.trim() }),
+      })
+      if (res.success) {
+        fetchSales()
+        if (selectedSale?.id === saleId) setSelectedSale(res.data?.sale ?? null)
+      } else {
+        alert(res.error || 'Erro ao estornar venda')
+      }
+    } catch {
+      alert('Erro de conexão')
+    }
+  }
+
   const handlePaySale = async (saleId: string, method: string) => {
     try {
       const res = await apiFetch(`/api/sales/${saleId}`, {
@@ -801,6 +830,26 @@ export function PDVModule() {
                     size="sm"
                   >
                     {generatingNF ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} Emitir Nota Fiscal
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleReverseSale(selectedSale.id)}
+                    className="text-orange-600 border-orange-200 hover:bg-orange-50 gap-1"
+                    size="sm"
+                  >
+                    <Undo2 className="w-4 h-4" /> Estornar
+                  </Button>
+                </div>
+              )}
+              {selectedSale.status === 'ESTORNADA' && (
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleShowReceipt(selectedSale)}
+                    className="gap-1 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                    size="sm"
+                  >
+                    <Printer className="w-4 h-4" /> Ver Recibo
                   </Button>
                   <Button
                     variant="outline"

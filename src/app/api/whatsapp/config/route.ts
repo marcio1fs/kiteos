@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { safeExternalFetch } from '@/lib/safe-url';
 import { decryptToken, encryptToken } from '@/lib/token-encryption';
+import { assertFeature, isPlanError, planErrorBody } from '@/lib/plans';
 
 // GET /api/whatsapp/config - Get WhatsApp configuration for an office
 export async function GET(request: NextRequest) {
@@ -84,6 +86,17 @@ export async function PUT(request: NextRequest) {
         { success: false, error: auth.error.message },
         { status: auth.error.status }
       );
+    }
+
+    // WhatsApp delivery is a paid feature. Enforced server-side: hiding the button
+    // in the UI is not authorization.
+    try {
+      await assertFeature(db, officeId, 'whatsapp');
+    } catch (planError) {
+      if (isPlanError(planError)) {
+        return NextResponse.json(planErrorBody(planError).body, { status: planError.status });
+      }
+      throw planError;
     }
 
     // Sanitize API URL - users often paste the full endpoint URL
@@ -170,10 +183,10 @@ export async function PUT(request: NextRequest) {
       try {
         // Test Z-API format
         const testUrl = `${urlToUse.replace(/\/$/, '')}/instances/${instanceToUse}/token/${tokenToUse}/status`;
-        const testResponse = await fetch(testUrl, {
+        const testResponse = await safeExternalFetch(testUrl, {
           method: 'GET',
           headers: { 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(10000),
+          timeoutMs: 10000,
         });
 
         if (testResponse.ok) {
@@ -183,10 +196,10 @@ export async function PUT(request: NextRequest) {
           // Try Evolution API format
           try {
             const evoUrl = `${urlToUse.replace(/\/$/, '')}/instance/fetchInstances`;
-            const evoResponse = await fetch(evoUrl, {
+            const evoResponse = await safeExternalFetch(evoUrl, {
               method: 'GET',
               headers: { 'Accept': 'application/json', 'apikey': tokenToUse },
-              signal: AbortSignal.timeout(10000),
+              timeoutMs: 10000,
             });
             if (evoResponse.ok) {
               validated = true;
@@ -219,12 +232,12 @@ export async function PUT(request: NextRequest) {
       try {
         // Test connection - try Z-API format first
         const testUrl = `${cleanApiUrl.replace(/\/$/, '')}/instances/${cleanInstance}/token/${cleanToken}/status`;
-        const testResponse = await fetch(testUrl, {
+        const testResponse = await safeExternalFetch(testUrl, {
           method: 'GET',
           headers: {
             'Accept': 'application/json',
           },
-          signal: AbortSignal.timeout(8000),
+          timeoutMs: 8000,
         });
 
         if (testResponse.ok) {
@@ -233,13 +246,13 @@ export async function PUT(request: NextRequest) {
           // Try Evolution API format
           try {
             const evoUrl = `${cleanApiUrl.replace(/\/$/, '')}/instance/fetchInstances`;
-            const evoResponse = await fetch(evoUrl, {
+            const evoResponse = await safeExternalFetch(evoUrl, {
               method: 'GET',
               headers: {
                 'Accept': 'application/json',
                 'apikey': cleanToken,
               },
-              signal: AbortSignal.timeout(8000),
+              timeoutMs: 8000,
             });
             if (evoResponse.ok) {
               validated = true;

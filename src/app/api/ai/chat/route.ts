@@ -120,6 +120,18 @@ export async function POST(request: NextRequest) {
     // Dynamically import db to ensure it's available
     const { db } = await import('@/lib/db');
 
+    // The AI assistant is a paid feature. Gate it before spending tokens or
+    // reading office data — the client hiding the panel is not authorization.
+    const { assertFeature, isPlanError, planErrorBody } = await import('@/lib/plans');
+    try {
+      await assertFeature(db, officeId, 'aiAccess');
+    } catch (planError) {
+      if (isPlanError(planError)) {
+        return NextResponse.json(planErrorBody(planError, true).body, { status: planError.status });
+      }
+      throw planError;
+    }
+
     // Build context-aware system prompt based on type
     const assistantType = type || 'GERAL';
     let systemPrompt = buildSystemPrompt(assistantType);

@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { isValidCPFCNPJ } from '@/lib/server-validators';
 import { sanitizeString, SANITIZABLE_FIELDS } from '@/lib/sanitize';
 import { logger } from '@/lib/logger';
+import { assertCanCreate, isPlanError, planErrorBody } from '@/lib/plans';
 
 // SEC-08 FIX: Migrated from verifyToken+getTokenFromHeaders to requireAuth
 export async function GET(request: NextRequest) {
@@ -118,18 +119,22 @@ export async function POST(request: NextRequest) {
     }
 
     // SECURITY FIX (AUD-01): Sanitize text inputs to prevent stored XSS
-    const client = await db.client.create({
-      data: {
-        name: sanitizeString(name),
-        cpfCnpj: cpfCnpj || null,
-        email: email ? sanitizeString(email) : null,
-        phone: phone ? sanitizeString(phone) : null,
-        address: address ? sanitizeString(address) : null,
-        city: city ? sanitizeString(city) : null,
-        state: state ? sanitizeString(state) : null,
-        zipCode: zipCode ? sanitizeString(zipCode) : null,
-        officeId,
-      },
+    // Plan limit is checked in the same transaction as the INSERT.
+    const client = await db.$transaction(async (tx) => {
+      await assertCanCreate(tx, officeId, 'CLIENT');
+      return tx.client.create({
+        data: {
+          name: sanitizeString(name),
+          cpfCnpj: cpfCnpj || null,
+          email: email ? sanitizeString(email) : null,
+          phone: phone ? sanitizeString(phone) : null,
+          address: address ? sanitizeString(address) : null,
+          city: city ? sanitizeString(city) : null,
+          state: state ? sanitizeString(state) : null,
+          zipCode: zipCode ? sanitizeString(zipCode) : null,
+          officeId,
+        },
+      });
     });
 
     await auditLog({
@@ -143,6 +148,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: client }, { status: 201 });
   } catch (error) {
+    if (isPlanError(error)) return NextResponse.json(planErrorBody(error).body, { status: error.status });
     logger.error('Create client error:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ success: false, error: 'Erro interno do servidor' }, { status: 500 });
   }

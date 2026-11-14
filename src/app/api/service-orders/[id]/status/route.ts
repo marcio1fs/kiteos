@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { CommercialError, commercialErrorResponse, paymentMethodSchema, toCents, fromCents } from '@/lib/commercial';
+import { returnOrderStock } from '@/lib/service-orders';
+import { z } from 'zod';
 
-// Valid status transitions: ABERTA → EM_EXECUCAO → FINALIZADA → PAGA
 const VALID_TRANSITIONS: Record<string, string[]> = {
   ABERTA: ['EM_EXECUCAO', 'CANCELADA'],
   EM_EXECUCAO: ['FINALIZADA', 'CANCELADA'],
@@ -11,205 +13,98 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   CANCELADA: [],
 };
 
-// PUT /api/service-orders/[id]/status - Change service order status
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+const bodySchema = z.object({
+  status: z.enum(['ABERTA', 'EM_EXECUCAO', 'FINALIZADA', 'PAGA', 'CANCELADA']),
+  paymentMethod: paymentMethodSchema.nullish(),
+}).strict();
+
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireAuth(request);
-    if (!auth.payload) {
-      return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
-    }
-
+    if (!auth.payload) return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
     const { id } = await params;
-    const body = await request.json();
-    const { status: newStatus, paymentMethod } = body;
+    const { status: newStatus, paymentMethod } = bodySchema.parse(await request.json());
+    const officeId = auth.payload.officeId;
 
-    if (!newStatus) {
-      return NextResponse.json(
-        { success: false, error: 'Status é obrigatório' },
-        { status: 400 }
-      );
-    }
-
-    const validStatuses = ['ABERTA', 'EM_EXECUCAO', 'FINALIZADA', 'PAGA', 'CANCELADA'];
-    if (!validStatuses.includes(newStatus)) {
-      return NextResponse.json(
-        { success: false, error: `Status inválido: ${newStatus}` },
-        { status: 400 }
-      );
-    }
-
-    const serviceOrder = await db.serviceOrder.findFirst({
-      where: { id, deleted: false },
-      include: {
-        client: true,
-        items: {
-          where: { deleted: false },
-        },
-      },
-    });
-
-    if (!serviceOrder) {
-      return NextResponse.json(
-        { success: false, error: 'Ordem de serviço não encontrada' },
-        { status: 404 }
-      );
-    }
-
-    if (serviceOrder.officeId !== auth.payload.officeId) {
-      return NextResponse.json({ success: false, error: 'Acesso negado' }, { status: 403 });
-    }
-
-    const currentStatus = serviceOrder.status;
-
-    // Check if transition is valid
-    const allowedTransitions = VALID_TRANSITIONS[currentStatus] || [];
-    if (!allowedTransitions.includes(newStatus)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Transição de status inválida: ${currentStatus} → ${newStatus}. Transições permitidas: ${allowedTransitions.join(', ') || 'Nenhuma'}`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Perform status change with side effects
     const result = await db.$transaction(async (tx) => {
-      const updateData: Record<string, unknown> = {
-        status: newStatus,
-      };
-
-      if (paymentMethod) {
-        updateData.paymentMethod = paymentMethod;
+      const order = await tx.serviceOrder.findFirst({
+        where: { id, officeId, deleted: false },
+        include: { client: true, items: { where: { deleted: false } } },
+      });
+      if (!order) throw new CommercialError('Ordem de serviço não encontrada', 404);
+      const allowed = VALID_TRANSITIONS[order.status] || [];
+      if (!allowed.includes(newStatus)) {
+        throw new CommercialError(`Transição de status inválida: ${order.status} → ${newStatus}`, 409);
+      }
+      if (newStatus === 'PAGA' && !paymentMethod && !order.paymentMethod) {
+        throw new CommercialError('Forma de pagamento é obrigatória', 400);
+      }
+      if (newStatus === 'CANCELADA' && auth.payload.role === 'EMPLOYEE') {
+        throw new CommercialError('Apenas ADMIN/OWNER podem cancelar OS', 403);
       }
 
-      // === WHEN STATUS CHANGES TO PAGA ===
-      if (newStatus === 'PAGA') {
-        updateData.paidAt = new Date();
-        if (paymentMethod) {
-          updateData.paymentMethod = paymentMethod;
-        }
+      const claimed = await tx.serviceOrder.updateMany({
+        where: { id, officeId, deleted: false, status: order.status, version: order.version },
+        data: {
+          status: newStatus,
+          version: { increment: 1 },
+          ...(newStatus === 'PAGA' ? { paidAt: new Date(), paymentMethod: paymentMethod || order.paymentMethod } : {}),
+        },
+      });
+      if (claimed.count !== 1) throw new CommercialError('OS alterada por outra operação. Recarregue e tente novamente.', 409);
 
-        // Create FinancialEntry (type: RECEBER)
-        // OS-05 FIX: totalAmount should be totalAmount - totalDiscount
-        const netAmount = Number(serviceOrder.totalAmount) - Number(serviceOrder.totalDiscount);
+      if (newStatus === 'PAGA') {
+        // totalAmount is already net of discount; gross is parts + services.
+        const grossCents = toCents(Number(order.totalParts)) + toCents(Number(order.totalServices));
+        const discountCents = toCents(Number(order.totalDiscount));
+        const netCents = toCents(Number(order.totalAmount));
+        if (netCents !== grossCents - discountCents) throw new CommercialError('Totais da OS inconsistentes. Revise a OS antes de pagar.', 409);
         await tx.financialEntry.create({
           data: {
-            type: 'RECEBER',
-            category: 'OS',
-            description: `Recebimento OS ${serviceOrder.number} - ${serviceOrder.client.name}`,
-            amount: Number(serviceOrder.totalAmount),
-            discount: Number(serviceOrder.totalDiscount),
-            totalAmount: Math.max(0, netAmount),
-            status: 'PAGO',
-            dueDate: new Date(),
-            paymentDate: new Date(),
-            paymentMethod: paymentMethod || serviceOrder.paymentMethod,
-            reference: serviceOrder.number,
-            officeId: serviceOrder.officeId,
+            type: 'RECEBER', category: 'OS', description: `Recebimento OS ${order.number} - ${order.client.name}`,
+            amount: fromCents(grossCents), discount: fromCents(discountCents), interest: 0, totalAmount: fromCents(netCents),
+            status: 'PAGO', dueDate: new Date(), paymentDate: new Date(), paymentMethod: paymentMethod || order.paymentMethod,
+            reference: `OS:${order.id}`, officeId,
           },
         });
-
-        // NOTE: Stock deduction now happens at OS creation time, not at payment.
-        // Stock was already deducted when PECA items were added to the OS.
       }
 
-      // === WHEN STATUS CHANGES TO CANCELADA ===
       if (newStatus === 'CANCELADA') {
-        // Return stock for all PECA items (reverse the stock deduction from creation)
-        const pecaItems = serviceOrder.items.filter((item) => item.type === 'PECA' && item.partId);
-        for (const item of pecaItems) {
-          const part = await tx.part.findFirst({
-            where: { id: item.partId!, deleted: false },
-          });
-          if (part) {
-            // Create ENTRADA stock movement (return)
-            await tx.stockMovement.create({
-              data: {
-                type: 'ENTRADA',
-                quantity: Number(item.quantity),
-                unitCost: Number(part.costPrice),
-                reason: 'Estorno - Ordem de Serviço cancelada',
-                reference: serviceOrder.number,
-                partId: part.id,
-                officeId: serviceOrder.officeId,
-              },
-            });
-            // Return stock quantity
-            await tx.part.update({
-              where: { id: part.id },
-              data: { quantity: Number(part.quantity) + Number(item.quantity) },
-            });
-          }
-        }
+        await returnOrderStock(tx, order, 'Estorno - Ordem de Serviço cancelada');
       }
 
-      // === WHEN STATUS CHANGES TO FINALIZADA ===
-      if (newStatus === 'FINALIZADA') {
-        // Send notification to client
-        const client = serviceOrder.client;
-        if (client.phone || client.email) {
-          await tx.notification.create({
-            data: {
-              type: client.phone ? 'WHATSAPP' : 'EMAIL',
-              template: 'OS_COMPLETED',
-              title: 'Ordem de Serviço Finalizada',
-              message: `Sua Ordem de Serviço ${serviceOrder.number} foi finalizada e está pronta para retirada. Valor total: R$ ${Number(serviceOrder.totalAmount).toFixed(2)}`,
-              recipient: client.phone || client.email,
-              status: 'PENDENTE',
-              serviceOrderId: id,
-              officeId: serviceOrder.officeId,
-            },
-          });
-        }
+      if (newStatus === 'FINALIZADA' && (order.client.phone || order.client.email)) {
+        await tx.notification.create({
+          data: {
+            type: order.client.phone ? 'WHATSAPP' : 'EMAIL', template: 'OS_COMPLETED', title: 'Ordem de Serviço Finalizada',
+            message: `Sua Ordem de Serviço ${order.number} foi finalizada e está pronta para retirada. Valor total: R$ ${Number(order.totalAmount).toFixed(2)}`,
+            recipient: order.client.phone || order.client.email, status: 'PENDENTE', serviceOrderId: id, officeId,
+          },
+        });
       }
 
-      // Update the service order status
-      const updated = await tx.serviceOrder.update({
-        where: { id },
-        data: updateData,
-        include: {
-          client: {
-            select: { id: true, name: true, phone: true, email: true },
-          },
-          vehicle: {
-            select: { id: true, plate: true, brand: true, model: true },
-          },
-          items: {
-            where: { deleted: false },
-            orderBy: { createdAt: 'asc' },
-          },
-        },
-      });
-
-      // Create audit log
       await tx.auditLog.create({
         data: {
-          action: 'STATUS_CHANGE',
-          entity: 'ServiceOrder',
-          entityId: id,
-          details: JSON.stringify({
-            number: serviceOrder.number,
-            fromStatus: currentStatus,
-            toStatus: newStatus,
-          }),
-          officeId: serviceOrder.officeId,
+          action: 'STATUS_CHANGE', entity: 'ServiceOrder', entityId: id,
+          details: JSON.stringify({ number: order.number, fromStatus: order.status, toStatus: newStatus }),
+          userId: auth.payload.userId, officeId,
         },
       });
-
-      return updated;
+      return tx.serviceOrder.findFirst({
+        where: { id, officeId },
+        include: {
+          client: { select: { id: true, name: true, phone: true, email: true } },
+          vehicle: { select: { id: true, plate: true, brand: true, model: true } },
+          items: { where: { deleted: false }, orderBy: { createdAt: 'asc' } },
+        },
+      });
     });
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    console.error('Error changing service order status:', error);
-    const message = error instanceof Error ? error.message : 'Erro ao alterar status da ordem de serviço';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    const known = commercialErrorResponse(error);
+    if (known) return NextResponse.json(known.body, { status: known.status });
+    console.error('Error changing service order status:', error instanceof Error ? error.message : error);
+    return NextResponse.json({ success: false, error: 'Erro ao alterar status da ordem de serviço' }, { status: 500 });
   }
 }
