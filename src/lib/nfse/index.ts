@@ -13,7 +13,6 @@ export {
   formatNfseCurrency,
   getServicoDescricao,
   SERVICOS_OFICINA,
-  ALIQ_ISSQN_PADRAO,
 } from './nfse-service'
 
 export type {

@@ -7,4 +7,5 @@ export {
   generateSpedFiscalPreview,
   type SpedGeneratorConfig,
   type SpedGenerationResult,
+  type SpedContabilista,
 } from './sped-generator'

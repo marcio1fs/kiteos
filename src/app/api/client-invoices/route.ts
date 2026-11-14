@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/auth';
 import { generateNextNumber } from '@/lib/numbering';
 import { logger } from '@/lib/logger';
 import { generateChaveAcesso } from '@/lib/nfe/chave-generator';
+import { INVOICE_DRAFT_STATUS } from '@/lib/fiscal/document-status';
 
 // GET /api/client-invoices - List client invoices
 export async function GET(request: NextRequest) {
@@ -301,7 +302,10 @@ export async function POST(request: NextRequest) {
           chave,
           serie: '1',
           type: 'VENDA',
-          status: 'EMITIDA',
+          // FISC-02: sem autorização da SEFAZ isto é um rascunho. A chave é
+          // pré-calculada, mas não há protocolo — e sem protocolo não é nota emitida.
+          status: INVOICE_DRAFT_STATUS,
+          protocoloAutorizacao: null,
           destNome: client?.name || 'Consumidor',
           destCpfCnpj: client?.cpfCnpj || null,
           destEndereco: client?.address || null,
@@ -465,7 +469,9 @@ export async function POST(request: NextRequest) {
           chave,
           serie: '1',
           type: 'SERVICO',
-          status: 'EMITIDA',
+          // FISC-02: idem — rascunho até a SEFAZ autorizar.
+          status: INVOICE_DRAFT_STATUS,
+          protocoloAutorizacao: null,
           destNome: client.name,
           destCpfCnpj: client.cpfCnpj || null,
           destEndereco: client.address || null,

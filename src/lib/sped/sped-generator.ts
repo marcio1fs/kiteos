@@ -19,12 +19,58 @@ import { Decimal } from '@prisma/client/runtime/library'
 // Types
 // ============================================
 
+/**
+ * Dados do contabilista para o registro 0100.
+ *
+ * FISC-03: o arquivo era gerado com `|0100|CONTADOR||||||9999|` — nome inventado,
+ * CPF/CRC/e-mail ausentes e um CRC fictício. Um SPED com contabilista fabricado é
+ * rejeitado e, pior, assina uma escrituração em nome de alguém que não existe.
+ * Agora esses dados são entrada obrigatória: sem eles a geração falha.
+ */
+export interface SpedContabilista {
+  nome: string
+  /** 11 dígitos, somente números. */
+  cpf: string
+  /** Registro no CRC, com UF (ex.: BA-012345/O-1). */
+  crc: string
+  cnpj?: string | null
+  cep?: string | null
+  endereco?: string | null
+  num?: string | null
+  compl?: string | null
+  bairro?: string | null
+  fone?: string | null
+  fax?: string | null
+  email: string
+}
+
 export interface SpedGeneratorConfig {
   officeId: string
   competencia: string // AAAAMM
   versao?: string // Default "019"
   dataInicio?: Date
   dataFim?: Date
+  contabilista?: SpedContabilista | null
+}
+
+/** Valida o contabilista antes de qualquer linha ser gerada. */
+function validateContabilista(contabilista: SpedContabilista | null | undefined): string[] {
+  const errors: string[] = []
+  if (!contabilista) {
+    errors.push(
+      'Registro 0100: informe os dados do contabilista (nome, CPF, CRC e e-mail). ' +
+      'O arquivo SPED não é gerado com dados fictícios.',
+    )
+    return errors
+  }
+  const nome = (contabilista.nome ?? '').trim()
+  if (nome.length < 3) errors.push('Registro 0100: NOME do contabilista é obrigatório')
+  const cpf = String(contabilista.cpf ?? '').replace(/\D/g, '')
+  if (cpf.length !== 11) errors.push('Registro 0100: CPF do contabilista deve ter 11 dígitos')
+  if (!(contabilista.crc ?? '').trim()) errors.push('Registro 0100: CRC do contabilista é obrigatório')
+  const email = (contabilista.email ?? '').trim()
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errors.push('Registro 0100: e-mail do contabilista é inválido')
+  return errors
 }
 
 export interface SpedGenerationResult {
@@ -239,12 +285,27 @@ async function generateBloco0(
     ordem: ordem++,
   })
 
-  // |0100| - Identificação do estabelecimento
-  // Contador / responsável pela escrita fiscal
+  // |0100| - Dados do contabilista (13 campos no Guia Prático EFD ICMS/IPI):
+  // REG, NOME, CPF, CRC, CNPJ, CEP, ENDERECO, NUM, COMPL, BAIRRO, FONE, FAX, EMAIL.
+  const contabilista = config.contabilista!
   lines.push({
     registro: '0100',
     bloco: '0',
-    linha: buildLine(['0100', 'CONTADOR', '', '', '', '', '', '9999']),
+    linha: buildLine([
+      '0100',
+      contabilista.nome.trim(),
+      String(contabilista.cpf).replace(/\D/g, ''),
+      contabilista.crc.trim(),
+      contabilista.cnpj ? String(contabilista.cnpj).replace(/\D/g, '') : '',
+      contabilista.cep ? String(contabilista.cep).replace(/\D/g, '') : '',
+      contabilista.endereco ?? '',
+      contabilista.num ?? '',
+      contabilista.compl ?? '',
+      contabilista.bairro ?? '',
+      contabilista.fone ? String(contabilista.fone).replace(/\D/g, '') : '',
+      contabilista.fax ? String(contabilista.fax).replace(/\D/g, '') : '',
+      contabilista.email.trim(),
+    ]),
     ordem: ordem++,
   })
 
@@ -356,7 +417,16 @@ async function generateBloco0(
     })
   }
 
-  // |0200| - Identificação dos itens (produtos)
+  // |0200| - Identificação dos itens.
+  //
+  // FISC-03: a versão anterior emitia uma lista incompatível com o Guia Prático —
+  // CFOP no lugar de COD_GEN, CST no lugar de ALIQ_ICMS, CSOSN no lugar de CEST e
+  // dois campos inexistentes (QTD_INV/VAL_INV, que são do bloco H). Quantidade e
+  // valor de estoque NÃO pertencem ao 0200; CFOP/CST/CSOSN pertencem aos itens de
+  // documento fiscal (C170/C190), não ao cadastro do item.
+  //
+  // Layout vigente (13 campos): REG, COD_ITEM, DESCR_ITEM, COD_BARRA, COD_ANT_ITEM,
+  // UNID_INV, TIPO_ITEM, COD_NCM, COD_EX_IPI, COD_GEN, COD_LST, ALIQ_ICMS, CEST.
   const itens = await db.part.findMany({
     where: {
       officeId: config.officeId,
@@ -365,24 +435,39 @@ async function generateBloco0(
     orderBy: { sku: 'asc' },
   })
 
+  // ALIQ_ICMS vem da regra tributária configurada, nunca do CST (que é outra coisa).
+  const taxRules = await db.taxRule.findMany({
+    where: { officeId: config.officeId, active: true },
+  })
+  const aliqIcmsPorNcm = new Map<string, number>()
+  for (const rule of taxRules) {
+    if (!rule.ncm || aliqIcmsPorNcm.has(rule.ncm)) continue
+    aliqIcmsPorNcm.set(rule.ncm, Number(rule.aliqIcms))
+  }
+
   for (const item of itens) {
+    const ncm = String(item.ncm || '').replace(/\D/g, '')
+    // COD_GEN é o gênero do item (tabela 4.2.1) = dois primeiros dígitos do NCM.
+    const codGen = ncm.length >= 2 ? ncm.slice(0, 2) : ''
+    const aliqIcms = item.ncm ? aliqIcmsPorNcm.get(item.ncm) : undefined
+
     lines.push({
       registro: '0200',
       bloco: '0',
       linha: buildLine([
         '0200',
-        item.sku,                     // COD_ITEM
-        item.description,             // DESCR_ITEM
-        '',                           // COD_BARRA
-        item.ncm || '',               // COD_NCM
-        '',                           // EX_IPI
-        item.cfop || '',              // COD_GEN (gênero)
-        '',                           // COD_LST
-        item.cst || '',               // ALIQ_ICMS
-        item.csosn || '',             // CEST (actually CSOSN, but field position)
-        item.unit,                    // UNID_INV
-        formatNumber(item.quantity, 3), // QTD_INV
-        formatNumber(item.costPrice),   // VAL_INV
+        item.sku,                       // COD_ITEM
+        item.description,               // DESCR_ITEM
+        '',                             // COD_BARRA (Part não tem coluna de código de barras)
+        '',                             // COD_ANT_ITEM (histórico vai no 0205)
+        item.unit || 'UN',              // UNID_INV
+        '00',                           // TIPO_ITEM: 00 = mercadoria para revenda
+        ncm,                            // COD_NCM
+        '',                             // COD_EX_IPI (Part não tem coluna de EX IPI)
+        codGen,                         // COD_GEN
+        '',                             // COD_LST (só para serviços)
+        aliqIcms === undefined ? '' : formatNumber(aliqIcms, 2), // ALIQ_ICMS
+        '',                             // CEST (não temos; CSOSN não é CEST)
       ]),
       ordem: ordem++,
     })
@@ -1048,24 +1133,32 @@ async function generateBlocoH(
     ordem: ordem++,
   })
 
-  // |H010| - Inventário (detalhe)
+  // |H010| - Inventário físico.
+  //
+  // FISC-03: os campos estavam na ordem certa mas com os valores deslocados —
+  // UNID saía vazio, QTD recebia a unidade, VL_UNIT recebia a quantidade, VL_ITEM
+  // recebia o custo unitário (e não o valor total) e IND_PROP, que é obrigatório,
+  // ia vazio. Layout do Guia Prático (11 campos): REG, COD_ITEM, UNID, QTD(3),
+  // VL_UNIT(6), VL_ITEM(2), IND_PROP, COD_PART, TXT_COMPL, COD_CTA, VL_ITEM_IR.
   for (const p of parts) {
-    const vlItem = Number(p.quantity) * Number(p.costPrice)
+    const quantidade = Number(p.quantity)
+    const valorUnitario = Number(p.costPrice)
+    const vlItem = Math.round(quantidade * valorUnitario * 100) / 100
     lines.push({
       registro: 'H010',
       bloco: 'H',
       linha: buildLine([
         'H010',
         p.sku,                          // COD_ITEM
-        '',                             // UNID
-        p.unit || 'UN',                 // QTD
-        formatNumber(p.quantity, 3),    // VL_UNIT
-        formatNumber(p.costPrice),      // VL_ITEM
-        '',                             // IND_PROP (0=próprio)
-        '',                             // COD_PART
+        p.unit || 'UN',                 // UNID (precisa existir no 0190/UNID_INV)
+        formatNumber(quantidade, 3),    // QTD
+        formatNumber(valorUnitario, 6), // VL_UNIT
+        formatNumber(vlItem, 2),        // VL_ITEM = QTD x VL_UNIT
+        '0',                            // IND_PROP: 0 = próprio e em seu poder
+        '',                             // COD_PART (obrigatório só se IND_PROP 1 ou 2)
         '',                             // TXT_COMPL
-        '',                             // COD_CTA
-        '',                             // VL_ITEM_IR
+        '',                             // COD_CTA (obrigatório só nos perfis A e B)
+        formatNumber(vlItem, 2),        // VL_ITEM_IR = VL_ITEM sem ajustes do RIR/99
       ]),
       ordem: ordem++,
     })
@@ -1168,6 +1261,17 @@ export async function generateSpedFiscal(config: SpedGeneratorConfig): Promise<S
         totalLinhas: 0,
         totalRegistros: {},
         errors: ['Competência inválida. Use o formato AAAAMM (ex: 202401).'],
+      }
+    }
+
+    const contabilistaErrors = validateContabilista(config.contabilista)
+    if (contabilistaErrors.length > 0) {
+      return {
+        success: false,
+        conteudo: '',
+        totalLinhas: 0,
+        totalRegistros: {},
+        errors: contabilistaErrors,
       }
     }
 

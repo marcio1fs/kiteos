@@ -32,6 +32,14 @@ export interface NfseServicoData {
 }
 
 export interface IssqnCalculation {
+  /**
+   * FISC-08: os tributos federais abaixo são calculados sob lucro presumido.
+   * O regime real da oficina ainda não é configurável (não há campo no schema),
+   * então a premissa sai explícita no resultado e na trilha de auditoria em vez
+   * de ficar implícita nos números. Confirmar com o contador — ver
+   * audit/IMPLEMENTACAO-FISCAL.md.
+   */
+  regimeFederal: 'LUCRO_PRESUMIDO'
   baseCalculo: number
   valorIssqn: number
   valorPis: number
@@ -66,8 +74,9 @@ export const SERVICOS_OFICINA = [
   { codigo: '14.06', descricao: 'Instalação e montagem de acessórios em veículos' },
 ] as const
 
-// Alíquota padrão de ISSQN para serviços (5% é a mais comum no Brasil)
-export const ALIQ_ISSQN_PADRAO = 5.0
+// FISC-08: não existe mais "alíquota padrão" de ISS. O valor é municipal e varia
+// por item da lista de serviços; inventar 5% produzia cálculo fiscal errado.
+// A alíquota precisa vir informada (ou de configuração por município).
 
 // Threshold para IR (lucro presumido - adiciona IR quando acima)
 export const IR_THRESHOLD = 0
@@ -118,6 +127,7 @@ export function calculateIssqn(data: NfseServicoData): IssqnCalculation {
   const valorTotal = Math.round((data.valorServicos - data.valorDeducoes) * 100) / 100
 
   return {
+    regimeFederal: 'LUCRO_PRESUMIDO',
     baseCalculo,
     valorIssqn,
     valorPis,
@@ -174,7 +184,9 @@ export function validateNfseData(data: Partial<NfseServicoData>): { valid: boole
     errors.push('Valor das deduções não pode ser maior que o valor dos serviços')
   }
 
-  if (data.aliqIssqn === undefined || data.aliqIssqn === null) {
+  if (data.aliqIssqn === undefined || data.aliqIssqn === null || !Number.isFinite(data.aliqIssqn)) {
+    // FISC-08: sem alíquota informada não há o que calcular — e o valor é
+    // municipal, então não existe default seguro.
     errors.push('Alíquota do ISSQN é obrigatória')
   } else if (data.aliqIssqn < 0 || data.aliqIssqn > 100) {
     errors.push('Alíquota do ISSQN deve estar entre 0% e 100%')

@@ -1,11 +1,20 @@
 /**
- * Fila assíncrona para processamento de importações SEFAZ
- * Gerencia tarefas de importação em background para não bloquear a API
- * 
- * Em produção, isso deve ser substituído por um sistema de fila real
- * (BullMQ, RabbitMQ, etc.). Esta implementação usa processamento
- * em memória com setTimeout para simular o comportamento assíncrono.
+ * Fila assíncrona para processamento de importações SEFAZ.
+ *
+ * FISC-04: `processImportJob` marcava COMPLETED depois de "etapas" que só
+ * atualizavam um número de progresso — sem consultar a SEFAZ, sem baixar XML e sem
+ * gravar nota. O usuário acreditava que a NF-e tinha sido importada. O job agora
+ * chama `importNfeByChave`, o mesmo núcleo da rota síncrona, e só conclui quando
+ * existe nota persistida; qualquer outra coisa vira FAILED com o motivo real.
+ *
+ * Limitação honesta e ainda aberta: o store é em memória (Map + setTimeout), então
+ * jobs se perdem em restart/deploy e não há retry/backoff nem coordenação entre
+ * instâncias. Uma fila persistente (BullMQ ou similar) continua pendente. O que
+ * sobrevive a restart é o registro durável em `sefazConsultas` / `invoices`, que o
+ * núcleo grava independentemente do job.
  */
+
+import { importNfeByChave } from './nfe-import'
 
 export type ImportJobStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
 
@@ -17,6 +26,8 @@ export interface ImportJob {
   status: ImportJobStatus
   progress: number // 0-100
   result: unknown | null
+  /** Código do motivo da falha, para o cliente não interpretar texto. */
+  failureCode: string | null
   error: string | null
   createdAt: Date
   startedAt: Date | null
@@ -52,6 +63,7 @@ export function createImportJob(chave: string, officeId: string, userId: string)
     status: 'PENDING',
     progress: 0,
     result: null,
+    failureCode: null,
     error: null,
     createdAt: new Date(),
     startedAt: null,
@@ -90,58 +102,65 @@ function updateJob(jobId: string, updates: Partial<ImportJob>): void {
 }
 
 /**
- * Processa a importação de forma assíncrona
- * Chama a API interna de importação
+ * Processa a importação executando o trabalho real.
+ *
+ * `COMPLETED` exige nota persistida: o resultado carrega `invoiceId` e chave.
+ * Falha de negócio (sem certificado, NF-e não autorizada, XML inválido) e exceção
+ * inesperada terminam em `FAILED` com o motivo verdadeiro.
  */
 export async function processImportJob(jobId: string): Promise<void> {
   const job = jobStore.get(jobId)
   if (!job) return
 
-  // Mark as processing
   updateJob(jobId, {
     status: 'PROCESSING',
     startedAt: new Date(),
     progress: 10,
+    failureCode: null,
+    error: null,
   })
 
   try {
-    // Step 1: Consult SEFAZ
-    updateJob(jobId, { progress: 20 })
-    
-    // Step 2: Download XML
-    updateJob(jobId, { progress: 40 })
+    const result = await importNfeByChave({
+      chave: job.chave,
+      officeId: job.officeId,
+      userId: job.userId,
+    })
 
-    // Step 3: Parse XML
-    updateJob(jobId, { progress: 60 })
+    if (!result.ok) {
+      updateJob(jobId, {
+        status: 'FAILED',
+        progress: 0,
+        completedAt: new Date(),
+        failureCode: result.code,
+        error: result.error,
+        result: result.data ?? null,
+      })
+      return
+    }
 
-    // Step 4: Create Invoice
-    updateJob(jobId, { progress: 80 })
-
-    // Step 5: Create Reception
-    updateJob(jobId, { progress: 90 })
-
-    // Use internal fetch to call the import API
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    
-    // We can't easily call internal APIs in Next.js without the request context,
-    // so for now, the actual processing happens synchronously in the route handler.
-    // This queue infrastructure is ready for when BullMQ or similar is added.
-    
     updateJob(jobId, {
       status: 'COMPLETED',
       progress: 100,
       completedAt: new Date(),
+      failureCode: null,
+      error: null,
       result: {
-        chave: job.chave,
-        message: 'Importação processada com sucesso',
+        chave: result.chave,
+        invoiceId: result.invoiceId,
+        numero: result.numero,
+        fornecedor: result.fornecedor,
+        valorTotal: result.valorTotal,
+        message: 'NF-e importada e gravada',
       },
     })
   } catch (error) {
     updateJob(jobId, {
       status: 'FAILED',
-      error: error instanceof Error ? error.message : 'Erro desconhecido no processamento',
-      completedAt: new Date(),
       progress: 0,
+      completedAt: new Date(),
+      failureCode: 'INTERNAL_ERROR',
+      error: error instanceof Error ? error.message : 'Erro desconhecido no processamento',
     })
   }
 }
@@ -157,6 +176,7 @@ export function startAsyncProcessing(jobId: string): void {
       console.error('Erro no processamento assíncrono:', err)
       updateJob(jobId, {
         status: 'FAILED',
+        failureCode: 'INTERNAL_ERROR',
         error: 'Erro interno no processamento assíncrono',
         completedAt: new Date(),
       })

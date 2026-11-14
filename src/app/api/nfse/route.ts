@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth, auditLog } from '@/lib/auth';
-import { calculateIssqn, validateNfseData, generateNfseXml, getCurrentCompetencia, ALIQ_ISSQN_PADRAO } from '@/lib/nfse';
+import { calculateIssqn, validateNfseData, generateNfseXml, getCurrentCompetencia } from '@/lib/nfse';
+import { NFSE_RPS_STATUS, fiscalErrorResponse } from '@/lib/fiscal/document-status';
 
 // GET /api/nfse - List NFS-e for an office
 export async function GET(request: NextRequest) {
@@ -94,6 +95,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: auth.error.message }, { status: auth.error.status });
     }
 
+    // FISC-08: a alíquota de ISS é municipal e varia por serviço. O fallback
+    // silencioso para 5% produzia cálculo fiscal errado; quando o regime é ISSQN
+    // a alíquota é obrigatória e a ausência vira NaN, que validateNfseData recusa.
+    const aliqInformada = aliqIssqn === undefined || aliqIssqn === null || aliqIssqn === ''
+      ? Number.NaN
+      : Number(aliqIssqn);
+
     // Build NFS-e data
     const nfseData = {
       numero: numeroInformado || '',
@@ -102,7 +110,7 @@ export async function POST(request: NextRequest) {
       discriminacao: discriminacao || '',
       valorServicos: Number(valorServicos) || 0,
       valorDeducoes: Number(valorDeducoes) || 0,
-      aliqIssqn: Number(aliqIssqn) || ALIQ_ISSQN_PADRAO,
+      aliqIssqn: tipoTributacao === 'ISSQN' ? aliqInformada : 0,
       tipoTributacao: tipoTributacao as 'ISSQN' | 'ISENTO' | 'IMUNE' | 'NAO_INCIDENCIA',
       clienteCpfCnpj,
       clienteNome,
@@ -148,13 +156,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate verification code
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let codigoVerificacao = '';
-    for (let i = 0; i < 8; i++) {
-      codigoVerificacao += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-
+    // FISC-08: o código de verificação é emitido pelo município na autorização.
+    // Gerá-lo aqui com Math.random() fabricava um documento que parecia oficial
+    // (e ainda por cima previsível). Enquanto não houver transmissão, fica nulo.
     // Get office data for XML generation
     const office = await db.office.findUnique({
       where: { id: officeId },
@@ -198,7 +202,6 @@ export async function POST(request: NextRequest) {
     const nfse = await db.nfseServico.create({
       data: {
         numero,
-        codigoVerificacao,
         competencia: nfseData.competencia,
         tipoTributacao: nfseData.tipoTributacao,
         itemListaServico: nfseData.itemListaServico,
@@ -219,7 +222,10 @@ export async function POST(request: NextRequest) {
         clienteEndereco: nfseData.clienteEndereco || null,
         clienteEmail: nfseData.clienteEmail || null,
         xmlContent,
-        status: 'EMITIDA',
+        // FISC-01: criado como RPS. Vira EMITIDA apenas por transmitNfse(), que
+        // exige prova de autorização do município (protocolo + código).
+        status: NFSE_RPS_STATUS,
+        codigoVerificacao: null,
         officeId,
         clientId: nfseData.clientId || null,
         serviceOrderId: nfseData.serviceOrderId || null,
@@ -235,13 +241,29 @@ export async function POST(request: NextRequest) {
       action: 'CREATE',
       entity: 'NfseServico',
       entityId: nfse.id,
-      details: JSON.stringify({ numero, valorServicos: nfseData.valorServicos, competencia: nfseData.competencia }),
+      details: JSON.stringify({
+        numero,
+        valorServicos: nfseData.valorServicos,
+        competencia: nfseData.competencia,
+        status: NFSE_RPS_STATUS,
+        aliqIssqn: nfseData.aliqIssqn,
+        regimeFederalAssumido: calculos.regimeFederal,
+      }),
       userId: auth.payload.userId,
       officeId,
     });
 
-    return NextResponse.json({ success: true, data: nfse }, { status: 201 });
+    // O que foi criado é um RPS: não é documento fiscal e não tem validade até
+    // ser transmitido. Dizer isso na resposta é parte da correção.
+    return NextResponse.json({
+      success: true,
+      transmitted: false,
+      data: nfse,
+      warning: `RPS ${numero} criado. Não é documento fiscal: transmita em POST /api/nfse/${nfse.id}/transmitir para obter autorização do município.`,
+    }, { status: 201 });
   } catch (error) {
+    const known = fiscalErrorResponse(error);
+    if (known) return NextResponse.json(known.body, { status: known.status });
     logger.error('Error creating NFS-e:', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Erro ao criar NFS-e' },
