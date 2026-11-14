@@ -21,12 +21,18 @@ import {
  */
 const sales = DATABASE_URL ? await import('@/lib/sales').catch(() => null) : null;
 
-const describeDb = DATABASE_URL && sales ? describe : describe.skip;
 if (DATABASE_URL && !sales) {
-  console.warn('[integration] PrismaClient indisponível — testes de estorno com o código de produção pulados.');
-} else if (!DATABASE_URL) {
+  // A database was provided, so this suite is EXPECTED to run. Skipping here would
+  // turn CI green without testing anything — fail loudly instead.
+  throw new Error(
+    'DATABASE_URL está definido mas o PrismaClient não carregou; os testes de estorno não podem ser pulados em silêncio.',
+  );
+}
+if (!DATABASE_URL) {
   console.warn('[integration] DATABASE_URL ausente — testes de estorno pulados.');
 }
+
+const describeDb = sales ? describe : describe.skip;
 
 const OFFICE = 'office-rev-a';
 const OTHER_OFFICE = 'office-rev-b';
