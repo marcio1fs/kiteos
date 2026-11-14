@@ -66,7 +66,7 @@ export async function createReversalEntry<T extends { id: string; officeId: stri
     supplierId?: string | null;
     invoiceId?: string | null;
   },
-  opts: { actorId: string; reason: string; paymentMethod?: string | null; description?: string },
+  opts: { actorId: string | null; actorLabel?: string | null; reason: string; paymentMethod?: string | null; description?: string },
 ) {
   const existing = await findReversalOf(tx, original.officeId, original.id);
   if (existing) return { entry: existing, created: false };
@@ -108,6 +108,7 @@ export async function createReversalEntry<T extends { id: string; officeId: stri
         reason: opts.reason,
         type: entry.type,
         totalAmount: fromCents(totalCents),
+        actor: opts.actorLabel ?? null,
       }),
       userId: opts.actorId,
       officeId: original.officeId,
@@ -130,7 +131,18 @@ export async function claimForReversal(tx: Tx, entryId: string, officeId: string
   return claimed.count === 1;
 }
 
-export type ReversalActor = { userId: string; role: string };
+export type ReversalActor = { userId: string | null; role: string; label?: string | null };
+
+/**
+ * `audit_logs.userId` is a real foreign key to `users.id` (onDelete: SetNull), so
+ * it can only ever hold a user row. A machine actor has no user: its identity is
+ * recorded in `details.actor` and `userId` stays null. Writing the label into the
+ * FK column instead would abort the whole reversal transaction on a real database
+ * — invisible in mocked tests, fatal in production.
+ */
+export function auditTrail(actor: { userId: string | null; label?: string | null }) {
+  return { userId: actor.userId, actor: actor.label ?? null };
+}
 
 /**
  * Actor for machine-initiated reversals (a payment webhook whose signature was
@@ -138,8 +150,8 @@ export type ReversalActor = { userId: string; role: string };
  * OWNER | ADMIN | EMPLOYEE and employee creation only accepts EMPLOYEE | ADMIN —
  * so no request can claim it; only server code can build this actor.
  */
-export function systemActor(id: string): ReversalActor {
-  return { userId: id, role: 'SYSTEM' };
+export function systemActor(label: string): ReversalActor {
+  return { userId: null, role: 'SYSTEM', label };
 }
 
 /** Only OWNER/ADMIN (or verified server code) may reverse settled money — BIZ-07. */
@@ -183,7 +195,8 @@ export async function reverseFinancialEntry(
     if (!claimed) throw new CommercialError('Entrada financeira não encontrada', 404);
 
     const { entry: reversal } = await createReversalEntry(tx, claimed, {
-      actorId: actor.userId,
+      actorId: auditTrail(actor).userId,
+      actorLabel: auditTrail(actor).actor,
       reason: input.reason,
       paymentMethod: input.paymentMethod,
     });

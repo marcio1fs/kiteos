@@ -20,8 +20,9 @@ import {
  * neither; CI has both).
  */
 const sales = DATABASE_URL ? await import('@/lib/sales').catch(() => null) : null;
+const reversals = DATABASE_URL ? await import('@/lib/reversals').catch(() => null) : null;
 
-if (DATABASE_URL && !sales) {
+if (DATABASE_URL && (!sales || !reversals)) {
   // A database was provided, so this suite is EXPECTED to run. Skipping here would
   // turn CI green without testing anything — fail loudly instead.
   throw new Error(
@@ -32,7 +33,7 @@ if (!DATABASE_URL) {
   console.warn('[integration] DATABASE_URL ausente — testes de estorno pulados.');
 }
 
-const describeDb = sales ? describe : describe.skip;
+const describeDb = sales && reversals ? describe : describe.skip;
 
 const OFFICE = 'office-rev-a';
 const OTHER_OFFICE = 'office-rev-b';
@@ -142,6 +143,30 @@ describeDb('estorno de venda paga em PostgreSQL real (código de produção)', (
 
     expect(await auditCount(seeded.saleId, 'Sale')).toBe(1);
     expect(await auditCount(seeded.entryId, 'FinancialEntry')).toBe(1);
+  });
+
+  it('ator de máquina estorna sem violar a FK de audit_logs.userId', async () => {
+    // `audit_logs.userId` references `users.id`. A webhook is not a user, so its
+    // label must land in details.actor with the FK left null: writing the label
+    // into the column aborts the whole reversal transaction on a real database.
+    // Only a real PostgreSQL can prove this — mocks have no foreign keys.
+    const seeded = await newPaidSale();
+
+    await sales!.reverseSale(seeded.saleId, OFFICE, reversals!.systemActor('mercadopago-webhook'), {
+      reason: 'Estorno Mercado Pago: pagamento 12345 com status refunded',
+    });
+
+    expect((await saleRow(seeded.saleId)).status).toBe('ESTORNADA');
+
+    for (const [entityId, entity] of [[seeded.saleId, 'Sale'], [seeded.entryId, 'FinancialEntry']] as const) {
+      const res = await pool.query(
+        `SELECT "userId", details FROM audit_logs WHERE "entityId" = $1 AND entity = $2 AND action = 'REVERSAL'`,
+        [entityId, entity],
+      );
+      expect(res.rows, entity).toHaveLength(1);
+      expect(res.rows[0].userId, `${entity}: FK precisa ficar nula para ator de máquina`).toBeNull();
+      expect(JSON.parse(res.rows[0].details as string)).toMatchObject({ actor: 'mercadopago-webhook' });
+    }
   });
 
   it('retry depois do estorno não cria nada (idempotência de webhook)', async () => {

@@ -8,6 +8,13 @@ import { systemActor } from '@/lib/reversals';
 import { CommercialError, toCents } from '@/lib/commercial';
 import { z } from 'zod';
 
+/**
+ * Identity recorded for machine-initiated writes. `audit_logs.userId` is a FK to
+ * `users.id`, so a webhook cannot be stored there: the label goes into
+ * `details.actor` and the FK stays null (see `auditTrail`).
+ */
+const MP_WEBHOOK_ACTOR = 'mercadopago-webhook';
+
 const notificationSchema = z.object({
   type: z.string().optional(),
   action: z.string().optional(),
@@ -95,7 +102,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ success: false, error: 'Payment amount/currency mismatch' }, { status: 409 });
         }
         try {
-          await paySale(sale.id, office.id, 'MERCADO_PAGO', 'mercadopago-webhook');
+          await paySale(sale.id, office.id, 'MERCADO_PAGO', null, undefined, MP_WEBHOOK_ACTOR);
         } catch (error) {
           if (error instanceof CommercialError && error.status === 409) {
             // Already paid or concurrently changed; safe to acknowledge.
@@ -107,7 +114,7 @@ export async function POST(request: NextRequest) {
 
       if ((payment.status === 'rejected' || payment.status === 'cancelled') && sale.status === 'ABERTA') {
         try {
-          await cancelSale(sale.id, office.id, 'mercadopago-webhook');
+          await cancelSale(sale.id, office.id, null, MP_WEBHOOK_ACTOR);
         } catch (error) {
           if (!(error instanceof CommercialError)) throw error;
         }
@@ -119,7 +126,7 @@ export async function POST(request: NextRequest) {
       if (payment.status === 'refunded' || payment.status === 'charged_back') {
         if (sale.status === 'PAGA') {
           try {
-            await reverseSale(sale.id, office.id, systemActor('mercadopago-webhook'), {
+            await reverseSale(sale.id, office.id, systemActor(MP_WEBHOOK_ACTOR), {
               reason: `Estorno Mercado Pago: pagamento ${payment.id} com status ${payment.status}`,
               paymentMethod: 'MERCADO_PAGO',
             });

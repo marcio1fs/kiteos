@@ -6,8 +6,8 @@ import {
 } from '@/lib/commercial';
 import type { Prisma } from '@prisma/client';
 import {
-  REVERSED_ENTRY_STATUS, assertCanReverse, claimForReversal, createReversalEntry,
-  findReversalOf, type ReversalActor,
+  REVERSED_ENTRY_STATUS, assertCanReverse, auditTrail, claimForReversal,
+  createReversalEntry, findReversalOf, type ReversalActor,
 } from '@/lib/reversals';
 
 const saleItemSchema = z.object({
@@ -230,7 +230,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>, actor:
   });
 }
 
-export async function paySale(saleId: string, officeId: string, paymentMethod: z.infer<typeof paymentMethodSchema>, actorId: string, discount?: number) {
+export async function paySale(saleId: string, officeId: string, paymentMethod: z.infer<typeof paymentMethodSchema>, actorId: string | null, discount?: number, actorLabel?: string | null) {
   return db.$transaction(async (tx) => {
     const sale = await tx.sale.findFirst({ where: { id: saleId, officeId, deleted: false }, include: { items: { where: { deleted: false } } } });
     if (!sale) throw new CommercialError('Venda não encontrada', 404);
@@ -258,13 +258,13 @@ export async function paySale(saleId: string, officeId: string, paymentMethod: z
       },
     });
     await tx.auditLog.create({
-      data: { action: 'PAYMENT_APPROVED', entity: 'Sale', entityId: sale.id, details: JSON.stringify({ paymentMethod, totalAmount: fromCents(totalCents) }), userId: actorId, officeId },
+      data: { action: 'PAYMENT_APPROVED', entity: 'Sale', entityId: sale.id, details: JSON.stringify({ paymentMethod, totalAmount: fromCents(totalCents), actor: actorLabel ?? null }), userId: actorId, officeId },
     });
     return tx.sale.findFirst({ where: { id: saleId, officeId }, include: { items: true, client: true } });
   });
 }
 
-export async function cancelSale(saleId: string, officeId: string, actorId: string) {
+export async function cancelSale(saleId: string, officeId: string, actorId: string | null, actorLabel?: string | null) {
   return db.$transaction(async (tx) => {
     const sale = await tx.sale.findFirst({ where: { id: saleId, officeId, deleted: false }, include: { items: { where: { deleted: false } } } });
     if (!sale) throw new CommercialError('Venda não encontrada', 404);
@@ -285,7 +285,7 @@ export async function cancelSale(saleId: string, officeId: string, actorId: stri
       data: { status: 'CANCELADO' },
     });
     await tx.auditLog.create({
-      data: { action: 'CANCEL', entity: 'Sale', entityId: sale.id, details: JSON.stringify({ number: sale.number }), userId: actorId, officeId },
+      data: { action: 'CANCEL', entity: 'Sale', entityId: sale.id, details: JSON.stringify({ number: sale.number, actor: actorLabel ?? null }), userId: actorId, officeId },
     });
     return tx.sale.findFirst({ where: { id: saleId, officeId }, include: { items: true, client: true } });
   });
@@ -355,7 +355,8 @@ export async function reverseSale(
       const claimedEntry = await tx.financialEntry.findFirst({ where: { id: paidEntry.id, officeId } });
       if (!claimedEntry) throw new CommercialError('Lançamento da venda não encontrado', 404);
       const result = await createReversalEntry(tx, claimedEntry, {
-        actorId: actor.userId,
+        actorId: auditTrail(actor).userId,
+        actorLabel: auditTrail(actor).actor,
         reason: input.reason,
         paymentMethod: input.paymentMethod,
         description: `Estorno da venda ${sale.number}`,
@@ -375,8 +376,9 @@ export async function reverseSale(
           financialEntryId: paidEntry?.id ?? null,
           reversalId: reversal?.id ?? null,
           itemsReturned: sale.items.filter(i => i.partId && !i.deleted).length,
+          actor: auditTrail(actor).actor,
         }),
-        userId: actor.userId,
+        userId: auditTrail(actor).userId,
         officeId,
       },
     });

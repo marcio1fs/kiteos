@@ -127,10 +127,21 @@ describe('política de estorno', () => {
     expect(h.db.financialEntry.create).not.toHaveBeenCalled();
   });
 
-  it('ator de sistema (webhook assinado) pode estornar, e SYSTEM não vem de token', () => {
+  it('ator de sistema (webhook assinado) pode estornar, e SYSTEM não vem de token', async () => {
     const actor = systemActor('mercadopago-webhook');
-    expect(actor).toEqual({ userId: 'mercadopago-webhook', role: 'SYSTEM' });
-    return expect(reverseSale('sale-A', officeId, actor, { reason: 'refund MP' })).resolves.toBeTruthy();
+    expect(actor).toEqual({ userId: null, role: 'SYSTEM', label: 'mercadopago-webhook' });
+
+    await expect(reverseSale('sale-A', officeId, actor, { reason: 'refund MP' })).resolves.toBeTruthy();
+
+    // audit_logs.userId é FK para users.id: o ator de máquina não tem usuário,
+    // então a identidade vai para details.actor e a FK fica nula. Escrever o
+    // rótulo na coluna abortaria a transação inteira num banco real.
+    const audits = h.db.auditLog.create.mock.calls.map(c => c[0].data);
+    expect(audits.length).toBeGreaterThanOrEqual(1);
+    for (const audit of audits) {
+      expect(audit.userId).toBeNull();
+      expect(JSON.parse(audit.details as string)).toMatchObject({ actor: 'mercadopago-webhook' });
+    }
   });
 });
 
