@@ -72,7 +72,7 @@ afterEach(() => {
   for (const [key, value] of Object.entries(ENV_ORIGINAL)) env[key] = value;
 });
 
-describe('Sonda 18 (CFG-01) — não existe validação de configuração na partida', () => {
+describe('Sonda 19 (CFG-01) — não existe validação de configuração na partida', () => {
   it('o app carrega sem JWT_SECRET e sem CERT_ENCRYPTION_KEY; ninguém valida env na subida', async () => {
     delete process.env.JWT_SECRET;
     delete process.env.CERT_ENCRYPTION_KEY;
@@ -94,7 +94,7 @@ describe('Sonda 18 (CFG-01) — não existe validação de configuração na par
   });
 });
 
-describe('Sonda 19 (CFG-02) — o healthcheck do container não verifica nada além de "/"', () => {
+describe('Sonda 20 (CFG-02) — o healthcheck do container não verifica nada além de "/"', () => {
   it('HEALTHCHECK aponta para a raiz e não existe rota de health/ready', () => {
     const dockerfile = readFileSync(path.join(RAIZ, 'Dockerfile'), 'utf8');
     const healthcheck = dockerfile
@@ -112,7 +112,7 @@ describe('Sonda 19 (CFG-02) — o healthcheck do container não verifica nada al
   });
 });
 
-describe('Sonda 20 (CFG-03) — NEXT_PUBLIC_APP_URL ausente vira localhost em produção', () => {
+describe('Sonda 21 (CFG-03) — NEXT_PUBLIC_APP_URL ausente vira localhost em produção', () => {
   it('redirect do retorno de assinatura manda o cliente para http://localhost:3000', async () => {
     setNodeEnv('production');
     delete env.NEXT_PUBLIC_APP_URL;
@@ -140,7 +140,7 @@ describe('Sonda 20 (CFG-03) — NEXT_PUBLIC_APP_URL ausente vira localhost em pr
   });
 });
 
-describe('Sonda 21 (CFG-04) — "está configurado?" é decidido por string-matching de placeholder', () => {
+describe('Sonda 22 (CFG-04) — "está configurado?" é decidido por string-matching de placeholder', () => {
   it("a presença de 'xxxxxxxx' no token decide o comportamento, em vários lugares", () => {
     const usos = fontesDoProduto().filter((f) =>
       readFileSync(f, 'utf8').includes("includes('xxxxxxxx')")
@@ -174,7 +174,7 @@ describe('Sonda 21 (CFG-04) — "está configurado?" é decidido por string-matc
   });
 });
 
-describe('Sonda 22 (CFG-05) — segredo por oficina é gravado em texto puro fora de "production"', () => {
+describe('Sonda 23 (CFG-05) — segredo por oficina é gravado em texto puro fora de "production"', () => {
   it('encryptToken devolve o plaintext quando NODE_ENV não é exatamente production', () => {
     delete process.env.CERT_ENCRYPTION_KEY;
 
@@ -189,7 +189,7 @@ describe('Sonda 22 (CFG-05) — segredo por oficina é gravado em texto puro for
   });
 });
 
-describe('Sonda 23 (CFG-06) — .env.example documenta variáveis que o código não lê', () => {
+describe('Sonda 24 (CFG-06) — .env.example documenta variáveis que o código não lê', () => {
   it('operador configura o que está no exemplo e nada acontece', () => {
     const exemplo = readFileSync(path.join(RAIZ, '.env.example'), 'utf8');
     const documentadas = new Set(
@@ -219,7 +219,7 @@ describe('Sonda 23 (CFG-06) — .env.example documenta variáveis que o código 
   });
 });
 
-describe('Sonda 24 (CFG-07) — PLATFORM_ADMIN_USER_IDS mal formado trava a plataforma em silêncio', () => {
+describe('Sonda 25 (CFG-07) — PLATFORM_ADMIN_USER_IDS mal formado trava a plataforma em silêncio', () => {
   it('separador errado e valores inválidos são aceitos sem nenhum aviso', () => {
     // Operador usa ";" (ou ponto e vírgula copiado de uma planilha) em vez de ",".
     process.env.PLATFORM_ADMIN_USER_IDS = 'user-1;user-2';

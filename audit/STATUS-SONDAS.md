@@ -33,6 +33,17 @@ defeitos reais deixaram de passar; a única que passa é a obsoleta (seção fin
 | 15 | E-mail não integrado é persistido como ENVIADA | **Passo 5** (sem provedor fica `PENDENTE` + `notIntegrated`) |
 | 16 | NFS-e é persistida como EMITIDA sem transmissão ao município | **Passo 5** (criação gera `RPS`; `EMITIDA` só via `transmitNfse` com prova) |
 | 17 | SPED: H010 desloca unidade/quantidade/valor e 0200 usa campos incompatíveis | **Passo 5** (`0100`/`0200`/`H010` conforme o Guia Prático) |
+| 19 | Não existe validação de configuração na partida (CFG-01) | **Passo 6** (`src/lib/env.ts` + `src/instrumentation.ts`; produção encerra com `exit 1`) |
+| 20 | HEALTHCHECK do container não verifica nada além de `/` (CFG-02) | **Passo 6** (`/api/health` + `/api/ready`; HEALTHCHECK → `/api/ready`) |
+| 21 | `NEXT_PUBLIC_APP_URL` ausente vira `localhost:3000` (CFG-03) | **Passo 6** (`requireAppUrl()`; erro em produção) |
+| 22 | "Está configurado?" por string-matching de placeholder (CFG-04) | **Passo 6** (`isPlaceholderSecret`; webhook 503 ≠ 401) |
+| 23 | Segredo de oficina gravado em texto puro fora de "production" (CFG-05) | **Passo 6** (`encryptToken` lança; opt-in explícito) |
+| 24 | `.env.example` documenta variáveis que o código não lê (CFG-06) | **Passo 6** (reescrito; há teste que impede a volta dos fantasmas) |
+| 25 | `PLATFORM_ADMIN_USER_IDS` mal formado trava a plataforma em silêncio (CFG-07) | **Passo 6** (`parsePlatformAdminIds` + aviso de lockout) |
+
+> **Atenção à numeração:** a sonda **18** é a obsoleta do webhook do Mercado Pago
+> (seção final); as de configuração são **19–25**. A sonda 18 não tem relação com
+> o passo 6.
 
 As sondas 3, 4 e 7 também passaram a falhar de novo depois do **passo 3** por outro
 motivo: o comportamento que elas caracterizavam foi substituído pelo estorno
@@ -54,14 +65,16 @@ Esta sonda não deve ser lida como "webhook ainda quebra assinatura oficial".
 ## Como ler daqui em diante
 
 - Para saber se um comportamento seguro está garantido, use
-  `npm run test:acceptance` (**172 testes**) — estes **exigem** o comportamento
+  `npm run test:acceptance` (**237 testes**) — estes **exigem** o comportamento
   correto.
 - As sondas servem como registro histórico do estado anterior à correção. As sondas
   14–17 já falham e foram substituídas por testes de aceitação equivalentes:
   `src/__tests__/acceptance/fiscal-honesty.test.ts` (24),
   `src/__tests__/acceptance/sped-layout.test.ts` (8) e
   `src/__tests__/acceptance/nfe-import.test.ts` (14, cobre o núcleo da importação
-  que a sonda 14 caracteriza pela fila).
+  que a sonda 14 caracteriza pela fila). As sondas 19–25 são cobertas por
+  `src/__tests__/acceptance/config-env.test.ts` (65) e, no que depende de banco
+  real, por `src/__tests__/integration/readiness.test.ts` (4).
 - As sondas continuam no repositório de propósito: se alguém reintroduzir um status
   fiscal fictício ou o layout antigo do SPED, a sonda correspondente volta a passar
   e o sinal fica visível.
