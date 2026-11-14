@@ -10,11 +10,13 @@
 >   **integração 20/20 em PostgreSQL 17**, typecheck 0 erros, lint 0 erros,
 >   gate de drift sem migration nova.
 > - Reforço posterior da importação (seção 5: certificado vencido e protocolo de
->   autorização) com `nfe-import.test.ts` (+14): **aceitação 172/172** e
->   **produto 251/251** verificados **no sandbox**; o run de CI correspondente é o
->   citado na seção 10.
+>   autorização) com `nfe-import.test.ts` (+14): CI run
+>   [`43541629846`](https://github.com/marcio1fs/kiteos/actions/runs/43541629846) — 4 jobs `success`, **aceitação 172/172**, **integração
+>   20/20 em PostgreSQL 17**, typecheck 0 erros, lint 0 erros, gate de drift sem
+>   migration nova. Localmente: **produto 251/251**.
 > Evidências: `audit/evidence/ci-run-43540255108.log`,
-> `audit/evidence/probes-pos-passo5.log`, `audit/evidence/testes-locais-passo5.log`.
+> `audit/evidence/ci-run-43541629846.log`, `audit/evidence/probes-pos-passo5.log`,
+> `audit/evidence/testes-locais-passo5.log`.
 >
 > **O que este passo NÃO entrega — e não pode entregar daqui:** homologação com
 > prefeitura e SEFAZ, validação do SPED no PVA e adapter concreto de provedor de
@@ -332,10 +334,15 @@ Mercado Pago (`audit/STATUS-SONDAS.md`). Evidência:
 | `npx vitest run src/__tests__/` | sandbox | **251/251** em 21 arquivos |
 | `npm run typecheck` | sandbox | exit 0 |
 | `npm run lint` | sandbox | 0 erros / 26 warnings (pré-existentes) |
-| Aceitação | CI `43540716047` | **158/158** (antes de `nfe-import.test.ts`) |
-| Integração PostgreSQL 17 | CI `43540255108` / `43540716047` | **20/20** |
-| Build / imagem Docker | CI `43540255108` / `43540716047` | `success`; `node v22.23.5 \| /app 156.1M` |
-| Gate de drift | CI `43540255108` / `43540716047` | `success` — **sem migration nova** |
+| Aceitação | CI `43540255108` → `43541629846` | **158/158** → **172/172** (14 arquivos) |
+| Integração PostgreSQL 17 | CI `43541629846` | **20/20** |
+| Build / imagem Docker | CI `43541629846` | `success`; `node v22.23.5 \| /app 156.1M` |
+| Gate de drift | CI `43541629846` | `success` — **sem migration nova** |
+
+O warning `The process '/usr/bin/git' failed with exit code 128` aparece nos 4 jobs
+de **todos** os runs desde antes deste passo (é o post-cleanup do
+`actions/checkout`): foi conferido contra `43540255108` e `43540716047` e não é
+regressão — nenhum job falha por ele.
 
 Nenhum teste de integração novo foi necessário: as mudanças deste passo são de
 estado e layout, e não tocam invariantes de concorrência em banco. Os 20 testes de

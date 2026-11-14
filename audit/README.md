@@ -27,8 +27,8 @@
 > `DATABASE_URL` — e o CI trata pulo com banco configurado como falha).
 > Typecheck: `npm run typecheck` (**0 erros**).
 > Última execução completa: CI run
-> [`43540255108`](https://github.com/marcio1fs/kiteos/actions/runs/43540255108),
-> 4 jobs `success` (evidência em `evidence/ci-run-43540255108.log`).
+> [`43541629846`](https://github.com/marcio1fs/kiteos/actions/runs/43541629846), 4 jobs `success` — aceitação **172/172**, integração
+> **20/20**, sem migration nova (evidência em `evidence/ci-run-43541629846.log`).
 
 - `RELATORIO-AUDITORIA.md`: relatório principal, achados, evidências, plano e critérios de produção.
 - `IMPLEMENTACAO-*.md`: o que já foi corrigido, como foi validado e o que continua aberto.
