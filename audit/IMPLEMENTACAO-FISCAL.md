@@ -3,10 +3,16 @@
 > **Escopo atacado:** FISC-01, FISC-02, FISC-03, FISC-04, parte de FISC-08 e
 > NOT-01/SEC-14 — os quatro defeitos que as sondas 14–17 ainda reproduziam.
 >
-> **Estado:** implementado e executado. CI run
-> [`43540255108`](https://github.com/marcio1fs/kiteos/actions/runs/43540255108)
-> (commit `29a2581`): 4 jobs `success`, **aceitação 158/158**, **integração 20/20
-> em PostgreSQL 17**, typecheck 0 erros, lint 0 erros.
+> **Estado:** implementado e executado.
+>
+> - CI run [`43540255108`](https://github.com/marcio1fs/kiteos/actions/runs/43540255108)
+>   (commit `29a2581`, o núcleo do passo): 4 jobs `success`, **aceitação 158/158**,
+>   **integração 20/20 em PostgreSQL 17**, typecheck 0 erros, lint 0 erros,
+>   gate de drift sem migration nova.
+> - Reforço posterior da importação (seção 5: certificado vencido e protocolo de
+>   autorização) com `nfe-import.test.ts` (+14): **aceitação 172/172** e
+>   **produto 251/251** verificados **no sandbox**; o run de CI correspondente é o
+>   citado na seção 10.
 > Evidências: `audit/evidence/ci-run-43540255108.log`,
 > `audit/evidence/probes-pos-passo5.log`, `audit/evidence/testes-locais-passo5.log`.
 >
@@ -128,17 +134,37 @@ de gravar um cancelamento fictício.
 O núcleo foi extraído da rota para `src/lib/sefaz/nfe-import.ts`
 (`importNfeByChave`), e **rota síncrona e job assíncrono chamam o mesmo código** —
 é isso que impede a fila de declarar conclusão sem importar. Sequência real:
-certificado ativo da oficina → `consultaProtocolo` (registrado em `sefazConsultas`
-aconteça o que acontecer) → bloqueio se `CANCELADA/DENEGADA/INUTILIZADA` →
-`downloadNfe` → validação e parse do XML → fornecedor → `invoice` + itens →
-recepção `PENDENTE` → auditoria.
+certificado ativo **e não vencido** da oficina → `consultaProtocolo` (registrado em
+`sefazConsultas` aconteça o que acontecer) → exigência de **protocolo de
+autorização** e bloqueio se `CANCELADA/DENEGADA/INUTILIZADA` → `downloadNfe` →
+validação e parse do XML → fornecedor → `invoice` + itens → recepção `PENDENTE` →
+auditoria.
+
+Duas pré-condições que não estavam na rota original e que seguem o mesmo princípio
+da seção 2:
+
+- **Certificado vencido → `409 CERTIFICADO_VENCIDO`.** A data de validade era
+  verificada apenas na rota que *mostra* o certificado (`GET /api/sefaz/certificado`),
+  nunca antes de usá-lo para autorizar algo. Com certificado vencido o handshake mTLS
+  falharia de qualquer forma — mas com um erro de TLS obscuro, depois de consumir
+  retentativas. Falhar antes devolve o motivo verdadeiro. Certificado sem `validade`
+  gravada não é bloqueado por este check (a SEFAZ continua sendo a autoridade).
+- **Sem `nProt`, não há importação.** O protocolo de autorização é a prova de que a
+  SEFAZ autorizou o documento — o mesmo conceito de `AuthorizationProof`. Antes, o
+  bloqueio era por *blocklist* (`CANCELADA/DENEGADA/INUTILIZADA`): um status
+  desconhecido, ou uma resposta `success: true` com `data: null` (`nfeStatus` cai em
+  `'ERRO'`, que não está na lista), passava direto para o download e podia gravar
+  nota inexistente. O `sefaz-client` já condiciona `success` a `AUTORIZADA`, mas o
+  núcleo **não depende de quem implementa o cliente** — exige o protocolo ele mesmo.
+  Nota cancelada *com* protocolo anterior continua bloqueada: o protocolo prova que
+  um dia foi autorizada, não que está válida agora.
 
 `processImportJob` agora termina assim:
 
 | Situação | Status do job |
 | --- | --- |
 | `importNfeByChave` devolveu nota persistida | `COMPLETED`, `progress 100`, `result.invoiceId` |
-| Falha de negócio (sem certificado, não autorizada, XML inválido) | `FAILED` + `failureCode` (`CERTIFICADO_AUSENTE`, `NFE_NAO_AUTORIZADA`, `XML_INDISPONIVEL`, `XML_INVALIDO`, `XML_PARSE_ERROR`, `ALREADY_IMPORTED`, `UF_INDETERMINADA`) |
+| Falha de negócio (sem certificado, vencido, não autorizada, XML inválido) | `FAILED` + `failureCode` (`CERTIFICADO_AUSENTE`, `CERTIFICADO_VENCIDO`, `NFE_NAO_AUTORIZADA`, `XML_INDISPONIVEL`, `XML_INVALIDO`, `XML_PARSE_ERROR`, `ALREADY_IMPORTED`, `UF_INDETERMINADA`) |
 | Exceção inesperada | `FAILED` + `INTERNAL_ERROR` com a mensagem real |
 
 **Limitação honesta, ainda aberta:** o store continua em memória (`Map` +
@@ -248,7 +274,7 @@ Nada aqui substitui homologação externa. Explicitamente:
 
 ## 10. Testes e execução real
 
-**Novos testes de aceitação — 32 (158 no total):**
+**Novos testes de aceitação — 46 (172 no total):**
 
 - `fiscal-honesty.test.ts` (24): criação gera RPS sem código e avisa; ISS sem
   alíquota → `400` e nada gravado; alíquota zero explícita aceita; sem provedor →
@@ -267,6 +293,33 @@ Nada aqui substitui homologação externa. Explicitamente:
   `COD_GEN` vazio sem NCM; `ALIQ_ICMS` vazio sem regra; `H010` campo a campo;
   coerência `0190` × `0200` × `H010`.
 
+- `nfe-import.test.ts` (14): o núcleo da importação coberto **diretamente**, não só
+  pela fila. Chave já importada não consulta de novo; sem certificado →
+  `CERTIFICADO_AUSENTE`; vencido → `CERTIFICADO_VENCIDO` e nenhum handshake tentado;
+  sem `validade` não é bloqueado pelo check; `it.each` com
+  `CANCELADA/DENEGADA/INUTILIZADA` **com protocolo presente** e XML disponível —
+  nenhum importa; autorizado sem protocolo → recusa com mensagem que diz
+  "protocolo"; consulta que falha, XML que não baixa, XML estruturalmente inválido e
+  XML que não faz parse → nada gravado; sucesso devolve `invoiceId`, grava itens,
+  recepção `PENDENTE`, vincula a consulta à nota e audita; fornecedor existente é
+  reaproveitado e enriquecido, não duplicado.
+
+**Verificação de mutação.** Teste que passa na primeira execução não prova nada,
+então cada um dos três bloqueios novos foi quebrado de propósito para conferir que o
+teste correspondente falha (arquivo restaurado em seguida):
+
+| Mutação aplicada em `nfe-import.ts` | Testes que falharam |
+| --- | --- |
+| Removido o check de certificado vencido | 1 |
+| Removido `\|\| !protocoloAutorizacao` | 1 |
+| Removido `BLOCKED_STATUSES.includes(nfeStatus) \|\|` | 4 |
+
+A terceira mutação **não falhou nada na primeira tentativa** — o teste de `CANCELADA`
+usava `protocolo: null`, então quem o pegava era o check novo, não a *blocklist*. O
+teste passava pelo motivo errado. Corrigido para o cenário real (nota cancelada que
+tem protocolo de autorização anterior) mais o `it.each` dos três status bloqueados;
+só então a mutação passou a falhar 4 testes.
+
 **Sondas:** as quatro do módulo fiscal (14 fila, 15 e-mail, 16 NFS-e, 17 SPED)
 **passaram a falhar** — pela convenção invertida, defeitos corrigidos. Resultado
 atual: **17 falham / 1 passa**, e a que passa é a sonda obsoleta do webhook do
@@ -275,14 +328,14 @@ Mercado Pago (`audit/STATUS-SONDAS.md`). Evidência:
 
 | Verificação | Onde | Resultado |
 | --- | --- | --- |
+| `npm run test:acceptance` | sandbox | **172/172** em 14 arquivos |
+| `npx vitest run src/__tests__/` | sandbox | **251/251** em 21 arquivos |
 | `npm run typecheck` | sandbox | exit 0 |
 | `npm run lint` | sandbox | 0 erros / 26 warnings (pré-existentes) |
-| `npm run test:acceptance` | sandbox | **158/158** em 13 arquivos |
-| `npx vitest run src/__tests__/` | sandbox | **237/237** em 20 arquivos |
-| Aceitação | CI `43540255108` | **158/158** |
-| Integração PostgreSQL 17 | CI `43540255108` | **20/20** |
-| Build / imagem Docker | CI `43540255108` | `success`; `node v22.23.5 \| /app 156.1M` |
-| Gate de drift | CI `43540255108` | `success` — **sem migration nova** |
+| Aceitação | CI `43540716047` | **158/158** (antes de `nfe-import.test.ts`) |
+| Integração PostgreSQL 17 | CI `43540255108` / `43540716047` | **20/20** |
+| Build / imagem Docker | CI `43540255108` / `43540716047` | `success`; `node v22.23.5 \| /app 156.1M` |
+| Gate de drift | CI `43540255108` / `43540716047` | `success` — **sem migration nova** |
 
 Nenhum teste de integração novo foi necessário: as mudanças deste passo são de
 estado e layout, e não tocam invariantes de concorrência em banco. Os 20 testes de
@@ -294,6 +347,7 @@ integração existentes continuam verdes contra PostgreSQL 17.
 `src/lib/fiscal/nfse-transmission.ts` · `src/lib/sefaz/nfe-import.ts` ·
 `src/app/api/nfse/[id]/transmitir/route.ts` ·
 `src/__tests__/acceptance/fiscal-honesty.test.ts` ·
+`src/__tests__/acceptance/nfe-import.test.ts` ·
 `src/__tests__/acceptance/sped-layout.test.ts`
 
 **Alterados:** `src/app/api/nfse/route.ts` · `src/app/api/nfse/from-os/route.ts` ·

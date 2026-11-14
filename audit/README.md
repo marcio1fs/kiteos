@@ -22,7 +22,7 @@
 >   **Não inclui homologação externa**: não há provedor de NFS-e integrado nem
 >   validação do SPED no PVA — ver as seções 9 e 12 daquele documento.
 >
-> Testes de aceitação: `npm run test:acceptance` (**158 testes**, Prisma mockado).
+> Testes de aceitação: `npm run test:acceptance` (**172 testes**, Prisma mockado).
 > Integração: `npm run test:integration` (**20 testes**, PostgreSQL real; pulam sem
 > `DATABASE_URL` — e o CI trata pulo com banco configurado como falha).
 > Typecheck: `npm run typecheck` (**0 erros**).

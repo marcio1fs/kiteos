@@ -54,12 +54,14 @@ Esta sonda não deve ser lida como "webhook ainda quebra assinatura oficial".
 ## Como ler daqui em diante
 
 - Para saber se um comportamento seguro está garantido, use
-  `npm run test:acceptance` (**158 testes**) — estes **exigem** o comportamento
+  `npm run test:acceptance` (**172 testes**) — estes **exigem** o comportamento
   correto.
 - As sondas servem como registro histórico do estado anterior à correção. As sondas
   14–17 já falham e foram substituídas por testes de aceitação equivalentes:
-  `src/__tests__/acceptance/fiscal-honesty.test.ts` (24) e
-  `src/__tests__/acceptance/sped-layout.test.ts` (8).
+  `src/__tests__/acceptance/fiscal-honesty.test.ts` (24),
+  `src/__tests__/acceptance/sped-layout.test.ts` (8) e
+  `src/__tests__/acceptance/nfe-import.test.ts` (14, cobre o núcleo da importação
+  que a sonda 14 caracteriza pela fila).
 - As sondas continuam no repositório de propósito: se alguém reintroduzir um status
   fiscal fictício ou o layout antigo do SPED, a sonda correspondente volta a passar
   e o sinal fica visível.

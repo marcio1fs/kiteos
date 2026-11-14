@@ -12,7 +12,6 @@
  * adaptador concreto entra quando houver com quem homologar.
  */
 
-import { db } from '@/lib/db';
 import type { AuthorizationProof } from './document-status';
 
 export type NfseTransmissionInput = {
@@ -53,20 +52,4 @@ export interface NfseProvider {
 export async function resolveNfseProvider(officeId: string): Promise<NfseProvider | null> {
   void officeId;
   return null;
-}
-
-/**
- * Certificado A1 ativo da oficina, se houver — pré-requisito de qualquer
- * transmissão fiscal real (NF-e/NFS-e) e da consulta SEFAZ na importação.
- */
-export async function resolveActiveCertificate(officeId: string) {
-  return db.certificadoDigital.findFirst({
-    where: {
-      officeId,
-      ativo: true,
-      deleted: false,
-      OR: [{ validade: null }, { validade: { gte: new Date() } }],
-    },
-    orderBy: { createdAt: 'desc' },
-  });
 }

@@ -30,6 +30,25 @@ import { parseNFeXml, validateXmlStructure } from '@/lib/nfe/xml-parser';
 /** Status que impedem a importação: o documento não é aproveitável. */
 const BLOCKED_STATUSES = ['CANCELADA', 'DENEGADA', 'INUTILIZADA'];
 
+const BLOCKED_REASON: Record<string, string> = {
+  CANCELADA: 'NF-e está cancelada e não pode ser importada',
+  DENEGADA: 'NF-e está denegada e não pode ser importada',
+  INUTILIZADA: 'NF-e está inutilizada e não pode ser importada',
+};
+
+/**
+ * Motivo legível pelo qual a importação foi recusada, ou `null` quando o bloqueio
+ * veio de outro lugar (falha de transporte, por exemplo) e a mensagem deve vir do
+ * cliente SEFAZ. Sem protocolo de autorização não há documento a importar.
+ */
+function blockedReason(nfeStatus: string, protocolo: string | null): string | null {
+  if (BLOCKED_REASON[nfeStatus]) return BLOCKED_REASON[nfeStatus];
+  if (!protocolo) {
+    return 'A SEFAZ não retornou protocolo de autorização para esta chave; sem protocolo a nota não pode ser importada';
+  }
+  return null;
+}
+
 export type ImportNfeSuccess = {
   ok: true;
   invoiceId: string;
@@ -47,6 +66,7 @@ export type ImportNfeFailure = {
   code:
     | 'ALREADY_IMPORTED'
     | 'CERTIFICADO_AUSENTE'
+    | 'CERTIFICADO_VENCIDO'
     | 'UF_INDETERMINADA'
     | 'NFE_NAO_AUTORIZADA'
     | 'XML_INDISPONIVEL'
@@ -74,6 +94,7 @@ export async function importNfeByChave(input: {
 
   const certificado = await db.certificadoDigital.findFirst({
     where: { officeId, ativo: true, deleted: false },
+    orderBy: { createdAt: 'desc' },
   });
   if (!certificado) {
     // Sem certificado não há mTLS: nada pode ser consultado, muito menos importado.
@@ -82,6 +103,16 @@ export async function importNfeByChave(input: {
       status: 404,
       code: 'CERTIFICADO_AUSENTE',
       error: 'Nenhum certificado digital ativo encontrado para este escritório',
+    };
+  }
+  // Certificado vencido não autoriza nada: a SEFAZ recusaria no handshake. Falhar
+  // aqui devolve o motivo verdadeiro em vez de um erro de TLS obscuro mais adiante.
+  if (certificado.validade && new Date(certificado.validade) < new Date()) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'CERTIFICADO_VENCIDO',
+      error: `Certificado digital vencido em ${new Date(certificado.validade).toLocaleDateString('pt-BR')}. Renove antes de importar.`,
     };
   }
 
@@ -119,6 +150,10 @@ export async function importNfeByChave(input: {
   const nfeStatus = consultaResult.data?.nfeStatus || 'ERRO';
   const codigoStatus = consultaResult.data?.cStat || null;
   const motivoStatus = consultaResult.data?.xMotivo || null;
+  // O protocolo (`nProt`) é a prova de que a SEFAZ autorizou o documento — o mesmo
+  // conceito de `AuthorizationProof` usado em NFS-e e nota de venda. Exigido aqui
+  // para que este núcleo não dependa de quem implementa o cliente SEFAZ.
+  const protocoloAutorizacao = consultaResult.data?.protocolo || null;
 
   // A consulta fica registrada independentemente do resultado: é a evidência
   // durável do que a SEFAZ respondeu (o job em memória não sobrevive a restart).
@@ -143,21 +178,17 @@ export async function importNfeByChave(input: {
     },
   });
 
-  if (!consultaResult.success || BLOCKED_STATUSES.includes(nfeStatus)) {
-    const friendlyMsg = nfeStatus === 'CANCELADA'
-      ? 'NF-e está cancelada e não pode ser importada'
-      : nfeStatus === 'DENEGADA'
-        ? 'NF-e está denegada e não pode ser importada'
-        : nfeStatus === 'INUTILIZADA'
-          ? 'NF-e está inutilizada e não pode ser importada'
-          : consultaResult.friendlyError || mapSefazErrorToFriendly(codigoStatus || '', motivoStatus || '');
+  if (!consultaResult.success || BLOCKED_STATUSES.includes(nfeStatus) || !protocoloAutorizacao) {
+    const friendlyMsg = blockedReason(nfeStatus, protocoloAutorizacao)
+      ?? consultaResult.friendlyError
+      ?? mapSefazErrorToFriendly(codigoStatus || '', motivoStatus || '');
 
     return {
       ok: false,
       status: 422,
       code: 'NFE_NAO_AUTORIZADA',
       error: friendlyMsg,
-      data: { status: nfeStatus, cStat: codigoStatus, xMotivo: motivoStatus },
+      data: { status: nfeStatus, cStat: codigoStatus, xMotivo: motivoStatus, protocolo: protocoloAutorizacao },
     };
   }
 
