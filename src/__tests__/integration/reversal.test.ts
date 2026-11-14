@@ -108,13 +108,17 @@ describeDb('estorno de venda paga em PostgreSQL real (código de produção)', (
       ),
     );
 
-    const won = results.filter(r => r.status === 'fulfilled');
-    const lost = results.filter(r => r.status === 'rejected');
-    expect(won).toHaveLength(1);
-    expect(lost).toHaveLength(9);
-    // Quem perdeu viu a venda já estornada: conflito, nunca um segundo reembolso.
-    expect(lost.every(r => statusOf(r as PromiseRejectedResult<unknown>) === 409)).toBe(true);
-    expect((won[0] as PromiseFulfilledResult<{ alreadyReversed: boolean }>).value.alreadyReversed).toBe(false);
+    const fulfilled = results.filter(r => r.status === 'fulfilled') as PromiseFulfilledResult<{ alreadyReversed: boolean }>[];
+    const rejected = results.filter(r => r.status === 'rejected') as PromiseRejectedResult<unknown>[];
+    expect(fulfilled.length + rejected.length).toBe(10);
+
+    // Exactly one caller may PERFORM the reversal. What the other nine see depends
+    // on interleaving: whoever loses the CAS gets 409, and whoever reads the sale
+    // after the winner committed takes the idempotent path and gets
+    // alreadyReversed. Both are correct, so the assertion is on how many actually
+    // reversed — never on the split.
+    expect(fulfilled.filter(r => r.value.alreadyReversed === false)).toHaveLength(1);
+    expect(rejected.every(r => statusOf(r) === 409)).toBe(true);
 
     expect((await saleRow(seeded.saleId)).status).toBe('ESTORNADA');
 
@@ -170,11 +174,12 @@ describeDb('estorno de venda paga em PostgreSQL real (código de produção)', (
       ...Array.from({ length: 4 }, () => sales!.cancelSale(seeded.saleId, OFFICE, userId)),
     ]);
 
-    const winners = results.filter(r => r.status === 'fulfilled');
-    expect(winners.length).toBeGreaterThanOrEqual(1);
-    // Cancelar uma venda PAGA é recusado, então quem venceu foi o estorno; e o
-    // estoque só pode ter voltado uma vez em qualquer interleaving.
-    expect((await saleRow(seeded.saleId)).status).toBe('ESTORNADA');
+    expect(results.some(r => r.status === 'fulfilled')).toBe(true);
+    // Cancelling a PAGA sale is refused, so only a reversal can win first; a
+    // cancellation that arrives AFTER the reversal committed is legitimate too
+    // (ESTORNADA -> CANCELADA). The final status may therefore be either one —
+    // what must not vary is the effect: one refund, ledger zero, stock back once.
+    expect(['ESTORNADA', 'CANCELADA']).toContain((await saleRow(seeded.saleId)).status);
     expect(await movements(seeded.saleId)).toEqual({ out: 1, back: 1 });
     expect(await partQuantity(seeded.partId)).toBe(5);
     expect((await entryCounts(seeded.saleId)).reversals).toBe(1);

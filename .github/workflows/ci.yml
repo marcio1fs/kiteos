@@ -47,10 +47,10 @@ jobs:
         run: npm run lint
 
       - name: Testes do produto
-        run: npx vitest run src/__tests__/ --reporter=verbose
+        run: npx vitest run src/__tests__/ --reporter=default --reporter=github-actions
 
       - name: Testes de aceitação
-        run: npm run test:acceptance -- --reporter=verbose
+        run: npm run test:acceptance -- --reporter=default --reporter=github-actions
 
 
   # Real PostgreSQL: migrations must apply cleanly, must still match
@@ -107,8 +107,10 @@ jobs:
           --exit-code
 
       # Skips itself when DATABASE_URL is missing; here it runs for real.
+      # The github-actions reporter republishes failures as check annotations,
+      # which are readable through the API — raw job logs are not always reachable.
       - name: Testes de integração e concorrência
-        run: npm run test:integration -- --reporter=verbose
+        run: npm run test:integration -- --reporter=default --reporter=github-actions
 
   # Production build — this is the step that used to fail outright:
   # `next/font/google` fetched Geist from fonts.gstatic.com on every build.
