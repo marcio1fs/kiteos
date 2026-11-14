@@ -71,10 +71,12 @@ describeDb('estorno de venda paga em PostgreSQL real (código de produção)', (
     return res.rows[0] as { out: number; back: number };
   }
 
-  async function auditCount(saleId: string, entity: string) {
+  /** Reversal audit rows are keyed by the entity they describe: the sale for the
+   *  Sale row, and the launch itself for the FinancialEntry row. */
+  async function auditCount(entityId: string, entity: string) {
     const res = await pool.query(
       `SELECT count(*)::int AS n FROM audit_logs WHERE "entityId" = $1 AND entity = $2 AND action = 'REVERSAL'`,
-      [saleId, entity],
+      [entityId, entity],
     );
     return res.rows[0].n as number;
   }
@@ -133,7 +135,7 @@ describeDb('estorno de venda paga em PostgreSQL real (código de produção)', (
     expect(await partQuantity(seeded.partId)).toBe(5); // 3 + 2 devolvidas, uma única vez
 
     expect(await auditCount(seeded.saleId, 'Sale')).toBe(1);
-    expect(await auditCount(seeded.saleId, 'FinancialEntry')).toBe(1);
+    expect(await auditCount(seeded.entryId, 'FinancialEntry')).toBe(1);
   });
 
   it('retry depois do estorno não cria nada (idempotência de webhook)', async () => {
