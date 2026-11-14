@@ -1,20 +1,27 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { db } from '@/lib/db';
 import crypto from 'crypto';
+import { MIN_SECRET_LENGTH, isPlaceholderSecret, platformAdminUserIds, readEnv } from '@/lib/env';
 
 // ============================================================================
 // SECURITY FIX: Removed hardcoded JWT secret fallback
 // The application MUST fail to start if JWT_SECRET is not configured
+//
+// PASSO 6 (CFG-01): a regra (obrigatório, mínimo de 32 caracteres, sem
+// placeholder) vive em `@/lib/env` e é verificada na partida por
+// `src/instrumentation.ts`. Aqui continua lançando porque este módulo também é
+// usado em testes que montam cenário incompleto de propósito — mas agora a mesma
+// validação impede o servidor de subir antes de qualquer request.
 // ============================================================================
 function getJwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
+  const { jwtSecret } = readEnv().config;
+  if (!jwtSecret) {
     throw new Error('FATAL: JWT_SECRET environment variable is not set. Refusing to start with insecure default.');
   }
-  if (secret.length < 32) {
-    throw new Error('FATAL: JWT_SECRET must be at least 32 characters long.');
+  if (jwtSecret.length < MIN_SECRET_LENGTH || isPlaceholderSecret(jwtSecret)) {
+    throw new Error(`FATAL: JWT_SECRET must be at least ${MIN_SECRET_LENGTH} characters long and not an example value.`);
   }
-  return new TextEncoder().encode(secret);
+  return new TextEncoder().encode(jwtSecret);
 }
 
 let _jwtSecret: Uint8Array | null = null;
@@ -172,13 +179,16 @@ async function resolveCurrentSession(payload: TokenPayload): Promise<TokenPayloa
   return { ...payload, userId: user.id, officeId: user.officeId, role: user.role };
 }
 
-/** Explicit platform operators. Tenant OWNER/ADMIN is never a platform role. */
+/**
+ * Explicit platform operators. Tenant OWNER/ADMIN is never a platform role.
+ *
+ * PASSO 6 (CFG-07): o parsing vive em `parsePlatformAdminIds`, que aceita
+ * separadores alternativos e emite aviso — antes, um `;` no lugar da vírgula
+ * deixava todos os operadores fora de `/api/admin/*` sem nenhum sinal.
+ */
 export function isPlatformAdmin(userId: string): boolean {
-  const ids = (process.env.PLATFORM_ADMIN_USER_IDS || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
-  return ids.includes(userId);
+  if (!userId) return false;
+  return platformAdminUserIds().includes(userId);
 }
 
 export async function requirePlatformAdmin(request: Request) {

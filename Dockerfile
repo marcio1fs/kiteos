@@ -25,8 +25,17 @@ COPY --from=builder /app/prisma ./prisma
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+# PASSO 6 (CFG-02): o healthcheck antigo fazia spider em "/", que responde 200
+# mesmo com DATABASE_URL quebrado, migrations não aplicadas ou JWT_SECRET ausente —
+# o container era declarado saudável e recebia tráfego quebrado.
+#
+# /api/ready verifica configuração + banco (inclusive se as migrations foram
+# aplicadas) e devolve 503 quando a instância não pode servir. /api/health continua
+# existindo como liveness pura (processo de pé, sem dependências): em Kubernetes,
+# use livenessProbe=/api/health e readinessProbe=/api/ready, para uma queda do
+# banco marcar a instância como não-pronta em vez de reiniciá-la em loop.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/ready || exit 1
 
 # Migrations are a release step, not a container start step: run
 #   npx prisma migrate deploy

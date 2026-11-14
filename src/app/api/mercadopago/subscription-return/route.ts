@@ -2,6 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { readEnv, requireAppUrl } from '@/lib/env';
+/**
+ * Base pública para os redirects de retorno do checkout.
+ *
+ * PASSO 6 (CFG-03): o fallback antigo era `|| 'http://localhost:3000'`, que em
+ * produção mandava o cliente de volta para uma URL que não existe. Aqui a ausência
+ * é erro — e, no ramo de catch, onde não se pode lançar de novo, devolve `null`
+ * para o chamador responder 500 em JSON em vez de redirecionar para o nada.
+ */
+function redirectBase(): string | null {
+  try {
+    return requireAppUrl();
+  } catch (error) {
+    logger.error('[MP Return] NEXT_PUBLIC_APP_URL indisponível para redirect', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+const CONFIG_ERROR_RESPONSE = {
+  success: false,
+  error: 'NEXT_PUBLIC_APP_URL não está configurado; não há para onde redirecionar',
+  configError: true,
+} as const;
+
 
 // GET /api/mercadopago/subscription-return - Handle return from MP checkout
 // SEC-10 FIX: Added requireAuth check and officeId ownership verification
@@ -9,15 +35,16 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request);
     if (!auth.payload) {
-      const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-      return NextResponse.redirect(`${APP_URL}?mp_return=error&reason=unauthorized`);
+      const base = redirectBase();
+      if (!base) return NextResponse.json(CONFIG_ERROR_RESPONSE, { status: 500 });
+      return NextResponse.redirect(`${base}?mp_return=error&reason=unauthorized`);
     }
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const subscriptionId = searchParams.get('subscriptionId');
 
-    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const APP_URL = requireAppUrl();
 
     // If payment was approved, check and update subscription
     if (status === 'success' && subscriptionId) {
@@ -33,10 +60,10 @@ export async function GET(request: NextRequest) {
       if (subscription.mpPreferenceId) {
         // Try to verify the payment status directly with MP API
         // This serves as a fallback in case the webhook hasn't been received yet
-        const mpAccessToken = process.env.MP_PLATFORM_ACCESS_TOKEN;
-        let accessToken = mpAccessToken && !mpAccessToken.includes('xxxxxxxx')
-          ? mpAccessToken
-          : null;
+        // PASSO 6 (CFG-04): "está configurado?" deixa de ser decidido por
+        // comparação com um único padrão de placeholder e passa a vir de
+        // readEnv(), que reconhece todos os do .env.example.
+        let accessToken = readEnv().config.mercadoPago.accessToken;
 
         // If no platform token, try the office's token
         if (!accessToken && subscription.officeId) {
@@ -168,7 +195,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   } catch (error) {
     logger.error('[MP Return] Error', { error: error instanceof Error ? error.message : String(error) });
-    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    return NextResponse.redirect(`${APP_URL}?mp_return=error`);
+    const base = redirectBase();
+    if (!base) return NextResponse.json(CONFIG_ERROR_RESPONSE, { status: 500 });
+    return NextResponse.redirect(`${base}?mp_return=error`);
   }
 }

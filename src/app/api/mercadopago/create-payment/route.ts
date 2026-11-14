@@ -5,6 +5,7 @@ import MercadoPagoConfig, { Payment, Preference } from 'mercadopago';
 import { decryptToken } from '@/lib/token-encryption';
 import { requireAuth } from '@/lib/auth';
 import { CommercialError, toCents, fromCents } from '@/lib/commercial';
+import { requireAppUrl } from '@/lib/env';
 
 // POST /api/mercadopago/create-payment - Create a payment preference for a sale
 export async function POST(request: NextRequest) {
@@ -104,6 +105,11 @@ export async function POST(request: NextRequest) {
     }];
 
     // Create preference
+    // PASSO 6 (CFG-03): sem NEXT_PUBLIC_APP_URL configurado isto lança em vez de
+    // mandar o Mercado Pago chamar http://localhost:3000 — que é o que o fallback
+    // antigo fazia, inclusive em produção, quebrando retorno do checkout e webhook.
+    const appUrl = requireAppUrl();
+
     const preferenceBody = {
       items: mpItems,
       payer: sale.client ? {
@@ -129,11 +135,11 @@ export async function POST(request: NextRequest) {
         default_installments: 1,
       },
       back_urls: {
-        success: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mercadopago/success`,
-        failure: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mercadopago/failure`,
-        pending: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mercadopago/pending`,
+        success: `${appUrl}/api/mercadopago/success`,
+        failure: `${appUrl}/api/mercadopago/failure`,
+        pending: `${appUrl}/api/mercadopago/pending`,
       },
-      notification_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mercadopago/webhook`,
+      notification_url: `${appUrl}/api/mercadopago/webhook`,
       external_reference: externalReference,
       statement_descriptor: 'KITEOS',
     };

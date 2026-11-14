@@ -6,8 +6,13 @@ import MercadoPagoConfig, { Preference } from 'mercadopago';
 import { randomBytes } from 'crypto';
 import { decryptToken } from '@/lib/token-encryption';
 import { PLANS, PLAN_KEYS, getPlan, isPlanKey } from '@/lib/plans';
+import { readEnv, requireAppUrl } from '@/lib/env';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+// PASSO 6 (CFG-03): aqui havia um `const APP_URL` em escopo de módulo, com o
+// fallback `|| 'http://localhost:3000'`. Era o pior caso dos quatro: por ser
+// avaliado no import, o valor ficava congelado na subida (e `NEXT_PUBLIC_*` é
+// inlined no build), então nem corrigir o ambiente em runtime adiantava. Agora a
+// URL é resolvida por request e a ausência em produção é erro de configuração.
 
 // POST /api/mercadopago/create-subscription - Create MP payment preference for subscription
 export async function POST(request: NextRequest) {
@@ -68,8 +73,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Get MP platform access token
-    const mpAccessToken = process.env.MP_PLATFORM_ACCESS_TOKEN;
-    if (!mpAccessToken || mpAccessToken.includes('xxxxxxxx')) {
+    // PASSO 6 (CFG-04): "o token é um placeholder?" é decidido por readEnv(),
+    // que conhece todos os padrões do .env.example — não por comparação com um
+    // único padrão repetido em cada rota.
+    const mercadoPago = readEnv().config.mercadoPago;
+    if (!mercadoPago.configured) {
       // If no platform token configured, try using the office's own MP token
       if (!office.mpAccessToken || !office.mpEnabled) {
         return NextResponse.json(
@@ -80,9 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     const officeToken = decryptToken(office.mpAccessToken);
-    const accessToken = (mpAccessToken && !mpAccessToken.includes('xxxxxxxx'))
-      ? mpAccessToken
-      : officeToken;
+    const accessToken = mercadoPago.accessToken ?? officeToken;
     if (!accessToken) {
       return NextResponse.json({ success: false, error: 'Token do Mercado Pago não configurado ou inválido' }, { status: 400 });
     }
@@ -145,6 +151,7 @@ export async function POST(request: NextRequest) {
     const payerName = payer?.name || office.name;
 
     // Create preference for subscription payment
+    const appUrl = requireAppUrl();
     const preferenceBody = {
       items: [
         {
@@ -167,11 +174,11 @@ export async function POST(request: NextRequest) {
         } : undefined,
       },
       back_urls: {
-        success: `${APP_URL}/api/mercadopago/subscription-return?status=success&subscriptionId=${subscriptionId}`,
-        failure: `${APP_URL}/api/mercadopago/subscription-return?status=failure&subscriptionId=${subscriptionId}`,
-        pending: `${APP_URL}/api/mercadopago/subscription-return?status=pending&subscriptionId=${subscriptionId}`,
+        success: `${appUrl}/api/mercadopago/subscription-return?status=success&subscriptionId=${subscriptionId}`,
+        failure: `${appUrl}/api/mercadopago/subscription-return?status=failure&subscriptionId=${subscriptionId}`,
+        pending: `${appUrl}/api/mercadopago/subscription-return?status=pending&subscriptionId=${subscriptionId}`,
       },
-      notification_url: `${APP_URL}/api/mercadopago/subscription-webhook`,
+      notification_url: `${appUrl}/api/mercadopago/subscription-webhook`,
       external_reference: paymentRef,
       statement_descriptor: 'KITEOS',
       metadata: {
@@ -201,8 +208,11 @@ export async function POST(request: NextRequest) {
     });
 
     // Determine the checkout URL
-    const isSandbox = (mpAccessToken && !mpAccessToken.includes('xxxxxxxx'))
-      ? mpAccessToken.startsWith('TEST-')
+    // Com token de plataforma, quem decide é o prefixo TEST- dele; sem plataforma,
+    // vale a configuração da oficina — e o default continua sendo sandbox, para
+    // nunca cobrar dinheiro real por omissão.
+    const isSandbox = mercadoPago.configured
+      ? mercadoPago.sandbox
       : (office.mpSandbox ?? true);
 
     const checkoutUrl = isSandbox

@@ -9,14 +9,17 @@
  */
 
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto'
+import { MIN_SECRET_LENGTH, isPlaceholderSecret, readEnv } from '@/lib/env'
 
 // ============================================================================
 // SECURITY FIX: Removed hardcoded fallback — must fail if env var not set
 // ============================================================================
 function getEncryptionKey(): string {
-  const key = process.env.CERT_ENCRYPTION_KEY;
-  if (!key || key.length < 32) {
-    throw new Error('FATAL: CERT_ENCRYPTION_KEY environment variable must be set (min 32 chars). Refusing to use insecure default.');
+  // PASSO 6 (CFG-01): a regra vive em `@/lib/env` (obrigatório, mínimo de 32
+  // caracteres, sem placeholder) e é checada na partida por `instrumentation.ts`.
+  const key = readEnv().config.certEncryptionKey;
+  if (!key || key.length < MIN_SECRET_LENGTH || isPlaceholderSecret(key)) {
+    throw new Error(`FATAL: CERT_ENCRYPTION_KEY environment variable must be set (min ${MIN_SECRET_LENGTH} chars, not an example value). Refusing to use insecure default.`);
   }
   return key;
 }

@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { decryptToken } from '@/lib/token-encryption';
 import { validateMpSignature, fetchMpPayment, type MpPayment } from '@/lib/mercadopago-webhook';
 import { toCents } from '@/lib/commercial';
+import { readEnv } from '@/lib/env';
 import { z } from 'zod';
 
 const notificationSchema = z.object({
@@ -117,12 +118,20 @@ export async function POST(request: NextRequest) {
     const xSignature = request.headers.get('x-signature');
     const xRequestId = request.headers.get('x-request-id');
 
-    const platformToken = process.env.MP_PLATFORM_ACCESS_TOKEN;
-    const platformSecret = process.env.MP_PLATFORM_WEBHOOK_SECRET;
-    if (platformToken && !platformToken.includes('xxxxxxxx')) {
+    // PASSO 6 (CFG-04): antes, um token de plataforma com placeholder fazia a rota
+    // cair no laço das oficinas e responder 401 "Invalid signature" quando nenhuma
+    // oficina tinha credencial. Configuração ausente era indistinguível de webhook
+    // forjado, e o operador procurava atacante onde havia .env incompleto.
+    const mercadoPago = readEnv().config.mercadoPago;
+    if (mercadoPago.configured && mercadoPago.accessToken) {
+      const platformToken = mercadoPago.accessToken;
+      const platformSecret = mercadoPago.webhookSecret;
       if (!platformSecret) {
         logger.error('[MP Subscription Webhook] Platform token configured without webhook secret');
-        return NextResponse.json({ success: false, error: 'Webhook not configured' }, { status: 503 });
+        return NextResponse.json(
+          { success: false, error: 'Webhook de plataforma sem MP_PLATFORM_WEBHOOK_SECRET', notConfigured: true },
+          { status: 503 }
+        );
       }
       if (!validateMpSignature({ xSignature, xRequestId, dataId, secret: platformSecret })) {
         return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 });
@@ -144,6 +153,15 @@ export async function POST(request: NextRequest) {
       where: { active: true, deleted: false, mpAccessToken: { not: null }, mpWebhookSecret: { not: null } },
       select: { id: true, mpAccessToken: true, mpWebhookSecret: true, mpUserId: true },
     });
+    if (offices.length === 0) {
+      // Nenhuma credencial em lugar nenhum: 503 com o motivo real. 401 aqui diria
+      // "sua assinatura é inválida" para um sistema que nem chegou a ter segredo.
+      logger.error('[MP Subscription Webhook] Mercado Pago não configurado: sem token de plataforma e nenhuma oficina com credenciais');
+      return NextResponse.json(
+        { success: false, error: 'Mercado Pago não configurado', notConfigured: true },
+        { status: 503 }
+      );
+    }
     let authenticated = false;
     for (const office of offices) {
       const secret = decryptToken(office.mpWebhookSecret);
